@@ -65,6 +65,9 @@ workspace "Stallout"
         pic "On"
         defines { "_ST_OS_LINUX" }
 
+    filter "action:vs*"
+        buildoptions { "/wd4201", "/wd26495" }
+
     stallout_project "Launcher"
         kind "ConsoleApp"
 
@@ -76,13 +79,15 @@ workspace "Stallout"
             "Engine"
         }
 
-        
+        postbuildcommands {
+            "{COPY} %{wks.location}deps/openal/lib/%{cfg.buildcfg}/OpenAL32.dll %{wks.location}bin/%{wks.name}/Launcher/%{cfg.buildcfg}"
+        }
 
     stallout_project "Engine"
         kind "SharedLib"
 
         postbuildcommands {
-            "{COPY} %{cfg.buildtarget.relpath} %{wks.location}/bin/%{wks.name}/Launcher/%{cfg.buildcfg}/"
+            "{COPY} %{cfg.buildtarget.relpath} %{wks.location}bin/%{wks.name}/Launcher/%{cfg.buildcfg}/"
         }
 
         defines {
@@ -103,13 +108,7 @@ workspace "Stallout"
         links {
             "dearimgui",
             "glfw",
-            "glad"
-        }
-
-        libdirs {
-            "deps/openal/bin"
-        }
-        links {
+            "glad",
             "OpenAL32"
         }
 
@@ -134,6 +133,22 @@ workspace "Stallout"
                 "dl",
                 "stdc++fs",
             }
+
+        
+        filter "configurations:Debug*"
+            libdirs {
+                "deps/openal/lib/Debug"
+            }
+        
+        filter "configurations:Test*"
+            libdirs {
+                "deps/openal/lib/Test"
+            }
+        filter "configurations:Release*"
+            libdirs {
+                "deps/openal/lib/Release"
+            }
+        
 
     stallout_project "Sandbox"
         kind "SharedLib"
