@@ -1,16 +1,19 @@
+
+
 function stallout_project(name) 
     project (name)
     language   "C++"
     warnings   "Extra"
     cppdialect "C++20"
-    targetdir  ("bin/%{wks.name}/%{prj.name}/%{cfg.buildcfg}")
-    objdir     ("bin/%{wks.name}/%{prj.name}/int/%{cfg.buildcfg}")
+    targetdir  ("bin/%{cfg.buildcfg}/%{wks.name}/%{prj.name}")
+    objdir     ("bin/%{cfg.buildcfg}/%{wks.name}/%{prj.name}/int")
     vectorextensions "SSE4.1"
     location "%{prj.name}"
     includedirs {
         "%{prj.location}/include",
         "deps/mz",
-        "deps/imgui"
+        "deps/imgui",
+        "deps/spdlog/include",
     }
     files { "%{prj.location}/src/**.cpp", "%{prj.location}/include/**.h" }
     flags {
@@ -80,14 +83,14 @@ workspace "Stallout"
         }
 
         postbuildcommands {
-            "{COPY} %{wks.location}deps/openal/lib/%{cfg.buildcfg}/OpenAL32.dll %{wks.location}bin/%{wks.name}/Launcher/%{cfg.buildcfg}"
+            "{COPY} %{wks.location}deps/openal/lib/%{cfg.buildcfg}/OpenAL32.dll %{wks.location}bin/%{cfg.buildcfg}/%{wks.name}/Launcher/"
         }
 
     stallout_project "Engine"
         kind "SharedLib"
 
         postbuildcommands {
-            "{COPY} %{cfg.buildtarget.relpath} %{wks.location}bin/%{wks.name}/Launcher/%{cfg.buildcfg}/"
+            "{COPY} %{cfg.buildtarget.relpath} %{wks.location}bin/%{cfg.buildcfg}/%{wks.name}/Launcher//"
         }
 
         defines {
@@ -100,7 +103,7 @@ workspace "Stallout"
             "Engine/include/Engine",
             "deps/glad/include",
             "deps/glfw/include",
-            "deps/spdlog/include",
+            
             "deps/stb",
             "deps/openal/repo/include"
         }
@@ -112,11 +115,26 @@ workspace "Stallout"
             "OpenAL32"
         }
 
+        removefiles {
+            "%{prj.location}/include/os/**",
+            "%{prj.location}/src/os/**"
+        }
+
+        files {
+            "%{prj.location}/include/os/*.h",
+            "%{prj.location}/src/os/*.cpp"
+        }
+
         filter "system:windows"
             links {
                 "opengl32",
                 "glu32",
                 "gdi32"
+            }
+
+            files {
+                "%{prj.location}/include/os/windows/*.h",
+                "%{prj.location}/src/os/windows/*.cpp"
             }
 
         filter "system:linux"
@@ -159,13 +177,17 @@ workspace "Stallout"
             "Engine"
         }
 
+        postbuildcommands {
+            "{COPY} %{cfg.buildtarget.relpath} %{wks.location}bin/%{cfg.buildcfg}/%{wks.name}/Launcher/"
+        }
+
     project "glfw"
         location   "deps/glfw"
         kind       "StaticLib"
         language   "C"
         warnings   "Off"
-        targetdir  ("bin/deps/%{prj.name}/%{cfg.buildcfg}")
-        objdir     ("bin/deps/%{prj.name}/int/%{cfg.buildcfg}")
+        targetdir  ("bin/%{cfg.buildcfg}/deps/%{prj.name}")
+        objdir     ("bin/%{cfg.buildcfg}/deps/%{prj.name}/int")
 
         files {
             "deps/glfw/include/glfw/glfw3.h",
@@ -221,8 +243,8 @@ workspace "Stallout"
         kind       "StaticLib"
         language   "C"
         warnings   "Off"
-        targetdir  ("bin/deps/%{prj.name}/%{cfg.buildcfg}")
-        objdir     ("bin/deps/%{prj.name}/int/%{cfg.buildcfg}")
+        targetdir  ("bin/%{cfg.buildcfg}/deps/%{prj.name}")
+        objdir     ("bin/%{cfg.buildcfg}/deps/%{prj.name}/int")
 
         files {
             "deps/glad/include/glad/glad.h",
@@ -237,8 +259,8 @@ workspace "Stallout"
         kind       "StaticLib"
         language   "C++"
         warnings   "Off"
-        targetdir  ("bin/deps/%{prj.name}/%{cfg.buildcfg}")
-        objdir     ("bin/deps/%{prj.name}/int/%{cfg.buildcfg}")
+        targetdir  ("bin/%{cfg.buildcfg}/deps/%{prj.name}")
+        objdir     ("bin/%{cfg.buildcfg}/deps/%{prj.name}/int")
 
         files {
             "%{prj.location}/*.h",
