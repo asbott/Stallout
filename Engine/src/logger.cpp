@@ -96,6 +96,8 @@ void init_logger(std::ostream& ostr) {
        
     spdlogger = spdlog::default_factory::create<spdlog::sinks::dist_sink_mt>("apparatus", sinks);
 
+    set_logger_level(spdlog::level::trace);
+
     log_info("The logger has been initialized!");
 }
 

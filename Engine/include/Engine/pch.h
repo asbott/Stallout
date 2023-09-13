@@ -13,6 +13,8 @@
 #include <deque>
 #include <mutex>
 #include <new>
+#include <type_traits>
+#include <bit>
 
 #include <fstream>
 

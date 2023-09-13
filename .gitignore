@@ -11,3 +11,5 @@
 !deps/windows/bin
 !deps/macos/bin
 !deps/linux/bin
+
+Launcher/output

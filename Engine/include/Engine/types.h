@@ -88,25 +88,3 @@ struct New_String {
 	inline size_t len() const { return strlen(reinterpret_cast<str_ptr_t>(str)); }
 };
 
-template <typename T, typename U>
-using Hash_Map = std::unordered_map<T, U>;
-
-template <typename T, typename U>
-using Ordered_Map = std::map<T, U>;
-
-template <typename T>
-using Hash_Set = std::unordered_set<T>;
-
-template <typename T>
-using Ordered_Set = std::set<T>;
-
-using Dynamic_String = std::string;
-
-template <typename T>
-using Queue = std::queue<T>;
-
-template <typename T>
-using Deque = std::deque<T>;
-
-template <typename T>
-using Stack = std::stack<T>;

@@ -18,14 +18,23 @@
 
 #ifndef _ST_DISABLE_ASSERTS
 
-	#define st_assert(expr, ...) \
+	#define ST_ASSERT(expr, ...) \
     if (!(expr)) { \
         log_critical("Assertion failed for expression '" #expr "'\nMessage:\n" __VA_ARGS__); _AP_BREAK; \
     }
 
+	#ifdef _ST_CONFIG_DEBUG
+		#define ST_DEBUG_ASSERT(expr, ...) \
+		if (!(expr)) { \
+			log_critical("Assertion failed for expression '" #expr "'\nMessage:\n" __VA_ARGS__); _AP_BREAK; \
+		}
+	#else
+		#define ST_DEBUG_ASSERT(expr, ...);
+	#endif
+
 #else
 
-	#define st_assert(expr, ...)
+	#define ST_ASSERT(expr, ...)
 
 #endif
 
@@ -98,12 +107,12 @@
 
 #define NOMINMAX
 
-#define stringify(x) #x
+#define STRINGIFY(x) #x
 
 #ifdef _ST_CONFIG_DEBUG
-	#define debug_only(x) x
+	#define IN_DEBUG_ONLY(x) x
 #else
-	#define debug_only(x)
+	#define IN_DEBUG_ONLY(x)
 #endif
 
 #define NS_BEGIN(x) namespace x {
@@ -123,3 +132,20 @@
 #elif defined(_OS_LINUX)
     #define export_function(ret) extern "C" ret
 #endif
+
+#define ALIGN(n, a) (((n) + ((a) - 1)) & ~((a) - 1))
+
+#define ALIGN_POW2(x) ({ \
+    unsigned int v = (x); \
+    if (v <= 1) 1; \
+    else { \
+        v--; \
+        v |= v >> 1; \
+        v |= v >> 2; \
+        v |= v >> 4; \
+        v |= v >> 8; \
+        v |= v >> 16; \
+        v++; \
+    } \
+    v; \
+})
