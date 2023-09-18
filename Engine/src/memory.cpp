@@ -3,23 +3,40 @@
 #include "Engine/memory.h"
 #include "Engine/logger.h"
 
+NS_BEGIN(engine);
+
 namespace Global_Allocator {
 
     struct Allocs {
-        Block_Allocator small_allocator_8 = Block_Allocator(1024 * 1000 * 4, 8);
-        Block_Allocator small_allocator_16 = Block_Allocator(1024 * 1000 * 4, 16);
 
-        Growing_Bin_Allocator common_allocator = Growing_Bin_Allocator(8, 1024 * 1000 * 8);
+        Allocs(size_t preallocated) 
+            : small_allocator_8 (Block_Allocator    ((size_t)(preallocated * 0.1), 8)),
+              small_allocator_16(Block_Allocator    ((size_t)(preallocated * 0.1), 16)),
+              common_allocator  (First_Fit_Allocator((size_t)(preallocated * 0.8))),
+              growing_allocator(Growing_Bin_Allocator(8, 1024 * 1000 * 8))
+            {
+        }
+
+        Block_Allocator small_allocator_8;
+        Block_Allocator small_allocator_16;
+
+        First_Fit_Allocator common_allocator;
+
+        Growing_Bin_Allocator growing_allocator;
 
         std::mutex mutex;
-    }* allocs;
+    }* allocs = NULL;
     
      IN_DEBUG_ONLY(
         size_t used_mem = 0;
     );
 
-    void init() {
-        allocs = new Allocs();
+    void init(size_t preallocated ) {
+        allocs = new Allocs(preallocated);
+    }
+
+    bool is_initialized() {
+        return allocs != NULL;
     }
 
     void* allocate(size_t sz, Global_Alloc_Flag flags) {
@@ -27,16 +44,26 @@ namespace Global_Allocator {
         std::lock_guard l(allocs->mutex);
         void* mem = NULL;
 
+        if (sz == SIZE_MAX) return NULL;
+
         if (!(flags & GLOBAL_ALLOC_FLAG_FORBID_SMALL_ALLOC)) {
             if (sz <= 8) {
                 mem = allocs->small_allocator_8.allocate(sz);
             } else if (sz <= 16) {
                 mem = allocs->small_allocator_16.allocate(sz);
             }
-        } 
+        }
 
-        if (!mem && sz <= allocs->common_allocator._max_bin_size) {
+        if ((flags & GLOBAL_ALLOC_FLAG_STATIC) && (flags & GLOBAL_ALLOC_FLAG_LARGE)) {
+            mem = malloc(sz); // This doesn't need to be fast because its large and static so just let os handle it
+        }
+
+        if (!mem) {
             mem = allocs->common_allocator.allocate(sz);
+        }
+
+        if (!mem && sz <= allocs->growing_allocator._max_bin_size) {
+            mem = allocs->growing_allocator.allocate(sz);
         }
 
         if (!mem) {
@@ -124,8 +151,6 @@ void* Block_Allocator::allocate(size_t sz) {
             p = _pointer;
             _pointer += _block_size;
         }
-
-        memset(p, 0, sz);
     }
     return p;
 }
@@ -195,6 +220,8 @@ void* Bin_Allocator::allocate(size_t sz) {
             if (p) return p; // If null, the bin is full
         }
     }
+
+    
 
     return NULL;
 }
@@ -277,3 +304,141 @@ bool Growing_Bin_Allocator::contains(void* p) const {
     }
     return false;
 }
+
+Linear_Allocator::Linear_Allocator(size_t buffer_size)
+    : _is_buffer_owner(true) {
+    _head = (byte_t*)Global_Allocator::allocate(buffer_size);
+    _tail = _head + buffer_size;
+    _next = _head;
+}
+Linear_Allocator::Linear_Allocator(void* existing_buffer, size_t buffer_size) 
+    : _is_buffer_owner(false){
+    set_buffer(existing_buffer, buffer_size);
+}
+
+Linear_Allocator::~Linear_Allocator() {
+    if (_is_buffer_owner) Global_Allocator::deallocate(_head, (size_t)(_tail - _head));
+}
+
+void* Linear_Allocator::allocate(size_t sz) {
+    ST_DEBUG_ASSERT(_next + sz <= _tail, "Linear allocator overflow");
+    
+    void* p = _next;
+    
+    _next += sz;
+
+    return p;
+}
+
+void Linear_Allocator::reset() {
+    _next = _head;
+}
+
+void Linear_Allocator::set_buffer(void* buffer, size_t buffer_size) {
+    ST_DEBUG_ASSERT(buffer);
+    if (_is_buffer_owner) Global_Allocator::deallocate(_head, (size_t)(_tail-_head));
+    
+    _head = (byte_t*)buffer;
+    _tail = _head + buffer_size;
+    _next = _head;
+
+    _is_buffer_owner = false;
+}
+
+void* Linear_Allocator::swap_buffer(void* buffer, size_t buffer_size) {
+    ST_DEBUG_ASSERT(buffer);
+    void* old_buffer = _head;
+
+    _head = (byte_t*)buffer;
+    _tail = _head + buffer_size;
+    _next = _head;
+
+    return old_buffer;
+}
+
+
+
+First_Fit_Allocator::First_Fit_Allocator(size_t buffer_size) {
+    _head = (byte_t*)malloc(buffer_size);
+    _tail = _head + buffer_size;
+
+    _next_free = (Free_Node*)_head;
+    _next_free->next = NULL;
+    _next_free->size = buffer_size;
+}
+First_Fit_Allocator::~First_Fit_Allocator() {
+    free(_head);
+}
+
+void* First_Fit_Allocator::allocate(size_t sz) {
+    Free_Node* next = _next_free;
+    Free_Node* prev = NULL;
+
+    sz = ALIGN(sz, 16);
+
+    while (next) {
+        if (sz <= next->size) {
+            void* p = (void*)next;
+
+            if (sz < next->size) {
+                // Create a new free node in the remaining space
+                Free_Node* new_node = (Free_Node*)((byte_t*)next + sz);
+                new_node->size = next->size - sz;
+                new_node->next = next->next;
+
+                next->size = sz;
+                next->next = new_node;
+            }
+
+            // Update the previous node's next, or the head of the list
+            if (prev) {
+                prev->next = next->next;
+            } else {
+                _next_free = next->next;
+            }
+
+            return p;
+        }
+
+        prev = next;
+        next = next->next;
+    }
+
+    return NULL; // Failed, no fit
+}
+void First_Fit_Allocator::deallocate(void* p, size_t sz) {
+    ST_DEBUG_ASSERT(this->contains(p), "Pointer does not belong in this allocator");
+
+    Free_Node* new_node = (Free_Node*)p;
+    new_node->size = sz;
+
+    Free_Node* prev = NULL;
+    Free_Node* next = _next_free;
+
+    sz = ALIGN(sz, 16);
+
+    // Find the correct position to insert the new free node
+    while (next && (uintptr_t)next < (uintptr_t)new_node) {
+        prev = next;
+        next = next->next;
+    }
+
+    // Insert and try to coalesce with following block
+    new_node->next = next;
+    if ((byte_t*)new_node + new_node->size == (byte_t*)next) {
+        new_node->size += next->size;
+        new_node->next = next->next;
+    }
+
+    // Try to coalesce with previous block
+    if (prev && (byte_t*)prev + prev->size == (byte_t*)new_node) {
+        prev->size += new_node->size;
+        prev->next = new_node->next;
+    } else if (prev) {
+        prev->next = new_node;
+    } else {  // If prev is NULL, new_node becomes the new head
+        _next_free = new_node;
+    }
+}
+
+NS_END(engine);

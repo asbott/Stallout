@@ -41,50 +41,5 @@ typedef const char* str_ptr_t;
 
 
 
-struct New_String {
-	char* str;
 
-	bool __owner = true;
-
-	inline New_String(str_ptr_t src) {
-		const size_t size = strlen(src) + 1;
-		str = static_cast<char*>(malloc(size));
-		if (str != 0) {
-			memset(str, 0, size);
-			strcpy(str, src);
-		}
-		
-	}
-	inline New_String(const New_String& other) {
-		const auto& src = other.str;
-		const size_t size = strlen(src) + 1;
-		str = static_cast<char*>(malloc(size));
-		if (str != 0) {
-			memset(str, 0, size);
-			strcpy(str, src);
-		}
-	}
-	inline New_String(size_t initial_len = 8) {
-		str = static_cast<char*>(malloc(initial_len + 1));
-		if (str != 0) memset(str, 0, initial_len + 1);
-	}
-	inline ~New_String() {
-		if (__owner) free(str);
-	}
-
-	bool equals(const New_String& other) const { 
-		return this->equals(other.str);
-	}
-	bool equals(str_ptr_t other) const {
-		return strcmp(str, other) == 0;
-	}
-
-	// Releases ownership and does not delete string on destruction
-	char* release() {
-		__owner = false;
-		return str;
-	}
-
-	inline size_t len() const { return strlen(reinterpret_cast<str_ptr_t>(str)); }
-};
 

@@ -21,6 +21,7 @@ Module::Module(str_ptr_t path) {
     if (win32_handle) {
         INIT_MOD_FN(init);
         INIT_MOD_FN(update);
+        INIT_MOD_FN(deinit);
         _status = MODULE_STATUS_OK;
     } else {
         switch(dwError) {

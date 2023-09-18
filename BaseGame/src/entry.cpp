@@ -10,6 +10,5 @@ export_function(int) init() {
 
 export_function(int) update(engine::Duration delta_time) {
     (void)delta_time;
-
     return 0;
 }

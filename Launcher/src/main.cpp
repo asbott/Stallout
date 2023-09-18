@@ -1,42 +1,25 @@
 #include "pch.h"
-#include "os/modules.h"
+/*#include "os/modules.h"
 #include "os/io.h"
 
 
 #include "Engine/logger.h"
-#include "Engine/memory.h"
 #include "Engine/debug/tests.h"
+#include "Engine/containers.h"*/
 
-#define _ST_RUN_TESTS 1
+#include "Engine/runtime.h"
+#include "Engine/logger.h"
 
-/*
-DO
 
-Basic memory allocation (Global, prealloc budget, fallback)
-
-Som kind of module list generated in build time
-
-*/
-
-std::ofstream log_stream;
 int main(/*char** argv, int argc*/) {
-	log_stream.open("output");
-	init_logger(log_stream);
-	Global_Allocator::init();
-
-	#if _ST_RUN_TESTS && !(_ST_DISABLE_ASSERTS)
-	run_tests();
-	#endif
 	
-	path_str_t sandbox_path = "";
-	sprintf(sandbox_path, "%s/%s", os::io::get_exe_dir().str, "Sandbox.dll");
-	os::Module* test_mod = ST_NEW(os::Module, sandbox_path);
+	engine::runtime::start();
 
-	test_mod->init();
-
-	test_mod->update(5);
-
-	ST_DELETE(test_mod);
+	if (engine::runtime::get_status_flags() & RUNTIME_STATUS_ERROR) {
+		log_error("Engine exited with errors");
+	} else {
+		log_info("Engine runtime exited as expected");
+	}
 
 	return 0;
 }

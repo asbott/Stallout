@@ -2,7 +2,9 @@
 
 #include "Engine/memory.h"
 
+#include "Engine/logger.h"
 
+NS_BEGIN(engine);
 
 /* 
     !! NOT RECOMMENDED FOR OOP.
@@ -39,8 +41,9 @@ struct Forbidden_Array {
         this->reserve(1);
     }
 
-	constexpr explicit Forbidden_Array(size_t nreserve) {
-        this->reserve(nreserve);
+	constexpr explicit Forbidden_Array(size_t n) {
+        this->reserve(n);
+        this->resize(n);
     }
 
 	constexpr Forbidden_Array(const Forbidden_Array& src) {
@@ -312,31 +315,89 @@ struct Forbidden_Array {
 };
 
 template <typename T>
+using STL_Array = std::vector<T, Global_Allocator::STL_Global_Allocator<T>>;
+
+template <typename T>
 using Array = typename std::conditional<
   std::is_trivially_copyable<T>::value,
   Forbidden_Array<T>,
-  std::vector<T, Global_Allocator::STL_Global_Allocator<T>>
+  STL_Array<T>
 >::type;
 
-template <typename T, typename U>
-using Hash_Map = std::unordered_map<T, U, std::hash<T>, std::equal_to<T>, Global_Allocator::STL_Global_Allocator<std::pair<const T, U>>>;
+
+
+// General hash template
+template<typename T>
+struct GeneralHash {
+    std::size_t operator()(const T& value) const {
+        return std::hash<T>()(value);
+    }
+};
+
+// Specialization for const char*
+template<>
+struct GeneralHash<const char*> {
+    std::size_t operator()(const char* str) const {
+        std::size_t hash = 0;
+        while (*str) {
+            hash = (hash << 5) - hash + *str++;
+        }
+        return hash;
+    }
+};
+
+// General equality template
+template<typename T>
+struct GeneralEqual {
+    bool operator()(const T& a, const T& b) const {
+        return a == b;
+    }
+};
+
+// Specialization for const char*
+template<>
+struct GeneralEqual<const char*> {
+    bool operator()(const char* a, const char* b) const {
+        return std::strcmp(a, b) == 0;
+    }
+};
+
+// General less template
+template<typename T>
+struct GeneralLess {
+    bool operator()(const T& a, const T& b) const {
+        return a < b;
+    }
+};
+
+// Specialization for const char*
+template<>
+struct GeneralLess<const char*> {
+    bool operator()(const char* a, const char* b) const {
+        return std::strcmp(a, b) < 0;
+    }
+};
+
 
 template <typename T, typename U>
-using Ordered_Map = std::map<T, U, std::less<T>, Global_Allocator::STL_Global_Allocator<std::pair<const T, U>>>;
+using Hash_Map = std::unordered_map<T, U, GeneralHash<T>, GeneralEqual<T>, Global_Allocator::STL_Global_Allocator<std::pair<const T, U>>>;
+
+template <typename T, typename U>
+using Ordered_Map = std::map<T, U, GeneralLess<T>, Global_Allocator::STL_Global_Allocator<std::pair<const T, U>>>;
 
 template <typename T>
-using Hash_Set = std::unordered_set<T, std::hash<T>, std::equal_to<T>, Global_Allocator::STL_Global_Allocator<T>>;
+using Hash_Set = std::unordered_set<T, GeneralHash<T>, GeneralEqual<T>, Global_Allocator::STL_Global_Allocator<T>>;
 
 template <typename T>
-using Ordered_Set = std::set<T, std::less<T>, Global_Allocator::STL_Global_Allocator<T>>;
+using Ordered_Set = std::set<T, GeneralLess<T>, Global_Allocator::STL_Global_Allocator<T>>;
 
-using Dynamic_String = std::basic_string<char, std::char_traits<char>, Global_Allocator::STL_Global_Allocator<char>>;
-
-template <typename T>
-using Queue = std::queue<T, std::deque<T, Global_Allocator::STL_Global_Allocator<T>>>;
+template <typename T, typename alloc_t = Global_Allocator::STL_Global_Allocator<T>>
+using Queue = std::queue<T, std::deque<T, alloc_t>>;
 
 template <typename T>
 using Deque = std::deque<T, Global_Allocator::STL_Global_Allocator<T>>;
 
 template <typename T>
 using Stack = std::stack<T, std::deque<T, Global_Allocator::STL_Global_Allocator<T>>>;
+
+NS_END(engine);

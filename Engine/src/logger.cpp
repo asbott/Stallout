@@ -1,5 +1,8 @@
 #include "pch.h"
 
+#include "logger.h"
+
+
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include "spdlog/sinks/ostream_sink.h"
@@ -7,7 +10,6 @@
 
 #include <spdlog/fmt/ostr.h>
 
-#include "logger.h"
 
 #include <spdlog/sinks/base_sink.h>
 
@@ -82,7 +84,7 @@ std::shared_ptr<spdlog::logger> spdlogger;
 void init_logger(std::ostream& ostr) {
     
     #ifdef _ST_CONFIG_DEBUG
-		spdlog::set_pattern("%^======================================================================================================\n[%n - %l - %H:%M:%S:%e - %s - %! - Line %# - Thread %t]\n======================================================================================================%$\n%v\n");
+		spdlog::set_pattern("%^[ %H:%M:%S:%e - %s:%!:%# - Thread %t ]\n------------------------------------------------------------------------------------------------%$\n> %v <\n");
     #elif defined(_ST_CONFIG_TEST) || defined(_ST_CONFIG_RELEASE)
     spdlog::set_pattern("%^%v%$\n");
     #else
@@ -94,7 +96,7 @@ void init_logger(std::ostream& ostr) {
 
     std::vector<spdlog::sink_ptr> sinks = { ostr_sink, stdout_sink };
        
-    spdlogger = spdlog::default_factory::create<spdlog::sinks::dist_sink_mt>("apparatus", sinks);
+    spdlogger = spdlog::default_factory::create<spdlog::sinks::dist_sink_mt>("Stallout", sinks);
 
     set_logger_level(spdlog::level::trace);
 

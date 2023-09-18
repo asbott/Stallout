@@ -1,6 +1,6 @@
 #pragma once
 
-// os API
+#include "Engine/timing.h"
 
 NS_BEGIN(os)
 
@@ -8,6 +8,7 @@ NS_BEGIN(os)
 
 enum ST_API Module_Status : s8 {
     MODULE_STATUS_UNSET,
+    MODULE_STATUS_UNLOADED,
     MODULE_STATUS_OK,
     MODULE_STATUS_FILE_NOT_FOUND,
     MODULE_STATUS_INVALID_FORMAT,
@@ -17,7 +18,7 @@ enum ST_API Module_Status : s8 {
     MODULE_STATUS_INVALID_DRIVE,
     MODULE_STATUS_UNKNOWN_ERROR,
 };
-str_ptr_t Module_Status_string(Module_Status value) {
+inline str_ptr_t Module_Status_string(Module_Status value) {
     switch (value) {
         case MODULE_STATUS_OK:
             return "OK";
@@ -46,7 +47,8 @@ struct ST_API Module {
     ~Module();
 
     _DECL_MOD_FN (init);
-    _DECL_MOD_FN (update, float);
+    _DECL_MOD_FN (deinit);
+    _DECL_MOD_FN (update, engine::Duration);
 
 
     Module_Status _status = MODULE_STATUS_UNSET;

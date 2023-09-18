@@ -1,5 +1,5 @@
 #pragma once
-
+#define SPDLOG_FUNCTION _ST_FUNC_SIG_STRIPPED
 #include <spdlog/spdlog.h>
 
 struct Gui_Window;

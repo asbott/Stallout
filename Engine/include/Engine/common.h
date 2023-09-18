@@ -29,14 +29,17 @@
 			log_critical("Assertion failed for expression '" #expr "'\nMessage:\n" __VA_ARGS__); _AP_BREAK; \
 		}
 	#else
-		#define ST_DEBUG_ASSERT(expr, ...);
+		#define ST_DEBUG_ASSERT(expr, ...)
 	#endif
 
 #else
 
-	#define ST_ASSERT(expr, ...)
+	#define ST_ASSERT(expr, ...)expr
+	#define ST_DEBUG_ASSERT(expr, ...)
 
 #endif
+
+#define INTENTIONAL_CRASH(reason) ST_ASSERT(false, "App intentionally crashed.\nReason: {}", reason)
 
 #define BIT1  1
 #define BIT2  2
@@ -105,6 +108,17 @@
 	#warning could not define function signature macro for this compiler
 #endif
 
+inline const char* __strip_func_sig_ns(const char* func) {
+    const char* pos = strrchr(func, ':');
+    if (pos != NULL && *(pos - 1) == ':') {
+        return pos + 1;
+    }
+    return func;
+}
+
+// Macro to use stripped function signature
+#define _ST_FUNC_SIG_STRIPPED __strip_func_sig_ns(_ST_FUNC_SIG)
+
 #define NOMINMAX
 
 #define STRINGIFY(x) #x
@@ -127,11 +141,7 @@
 
 #define st_offsetof(st, m) ((size_t)(&((st *)0)->m))
 
-#ifdef _ST_OS_WINDOWS
-    #define export_function(ret) extern "C" __declspec(dllexport) ret __cdecl
-#elif defined(_OS_LINUX)
-    #define export_function(ret) extern "C" ret
-#endif
+
 
 #define ALIGN(n, a) (((n) + ((a) - 1)) & ~((a) - 1))
 
@@ -149,3 +159,11 @@
     } \
     v; \
 })
+
+
+
+#define MAX_PATH_LEN 320
+
+#ifndef _ST_RENDER_BACKEND_OPENGL45
+	#error Only opengl45 is supported at the moment
+#endif

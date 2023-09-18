@@ -29,15 +29,22 @@
     }
 */
 
-//#define DISABLE_ALLOCATORS
+
+// TODO:
+// Store meta pointer stuff so program can crash
+// when user allocate or deallocate incorrectly
+// to avoid mega ub everywhere.
+// Probably only in global allocator as when
+// someone use custom allocation the responsibility
+// should be on them
 
 #ifndef DISABLE_ALLOCATORS
 
-#define ST_MEM(sz) (Global_Allocator::allocate(sz))
-#define ST_FREE(p, sz) (Global_Allocator::deallocate(p, sz))
+#define ST_MEM(sz) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::allocate(sz) : malloc(sz))
+#define ST_FREE(p, sz) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::deallocate(p, sz) : free(p))
 
-#define ST_NEW(st, ...) (Global_Allocator::allocate_and_construct<st>(__VA_ARGS__))
-#define ST_DELETE(p) (Global_Allocator::deallocate_and_deconstruct(p))
+#define ST_NEW(st, ...) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::allocate_and_construct<st>(__VA_ARGS__) : new st(__VA_ARGS__))
+#define ST_DELETE(p) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::deallocate_and_deconstruct(p) : delete p)
 
 #else
 
@@ -49,15 +56,22 @@
 
 #endif
 
-enum Global_Alloc_Flag {
+NS_BEGIN(engine);
+
+typedef u8 Global_Alloc_Flag;
+enum Global_Alloc_Flag_Impl {
     GLOBAL_ALLOC_FLAG_NONE = 0,
     GLOBAL_ALLOC_FLAG_ALIGN = BIT(1),
-    GLOBAL_ALLOC_FLAG_FORBID_SMALL_ALLOC = BIT(2)
+    GLOBAL_ALLOC_FLAG_FORBID_SMALL_ALLOC = BIT(2),
+    GLOBAL_ALLOC_FLAG_STATIC = BIT(3),
+    GLOBAL_ALLOC_FLAG_LARGE = BIT(4)
 };
 
 namespace Global_Allocator {
 
-    ST_API void init();
+    ST_API void init(size_t preallocated = 1024 * 1000 * 1000);
+
+    ST_API bool is_initialized();
 
     ST_API void* allocate(size_t sz, Global_Alloc_Flag flags = GLOBAL_ALLOC_FLAG_NONE);
     ST_API void deallocate(void* p, size_t sz);
@@ -252,3 +266,80 @@ struct ST_API Growing_Bin_Allocator {
     }
 
 };
+
+// Not thread safe
+struct ST_API Linear_Allocator {
+    byte_t* _head, *_tail, *_next;   
+
+    bool _is_buffer_owner;
+
+    // TAKES ownership of buffer
+    Linear_Allocator(size_t buffer_size);
+
+    // Does NOT take ownership of buffer
+    Linear_Allocator(void* existing_buffer, size_t buffer_size);
+
+    ~Linear_Allocator();
+
+    void* allocate(size_t sz);
+    void deallocate(void* , size_t ) {}
+
+    bool contains(void* p) { return p >= _head && p < _tail; }
+
+    void reset();
+
+    // Deletes current if responsible, but does not take responsibility for this new one
+    void set_buffer(void* buffer, size_t buffer_size);
+
+    // Takes responsibility for this one IF responsiblity for current
+    void* swap_buffer(void* buffer, size_t buffer_size);
+
+    template <typename type_t, typename ...args_t>
+    inline type_t* allocate_and_construct(args_t&&... args) {
+        void* mem = this->allocate(sizeof(type_t));
+        
+        if (!mem) return nullptr;
+
+        return new(mem) type_t(std::forward<args_t>(args)...);
+    }
+
+    template <typename type_t>
+    inline void deallocate_and_deconstruct(type_t* p) {
+        p->~type_t();
+        this->deallocate(p, sizeof(type_t));
+    } 
+};
+
+// Minimum allocation size sizeof(Free_Node) (16 bytes)
+struct First_Fit_Allocator {
+    struct Free_Node {
+        Free_Node* next;
+        size_t size;
+    } *_next_free;
+    byte_t* _head, *_tail;
+
+    First_Fit_Allocator(size_t buffer_size);
+    ~First_Fit_Allocator();
+
+    void* allocate(size_t sz);
+    void deallocate(void* p, size_t sz);
+
+    bool contains(void* p) const { return p >= _head && p < _tail; }
+
+    template <typename type_t, typename ...args_t>
+    inline type_t* allocate_and_construct(args_t&&... args) {
+        void* mem = this->allocate(sizeof(type_t));
+        
+        if (!mem) return nullptr;
+
+        return new(mem) type_t(std::forward<args_t>(args)...);
+    }
+
+    template <typename type_t>
+    inline void deallocate_and_deconstruct(type_t* p) {
+        p->~type_t();
+        this->deallocate(p, sizeof(type_t));
+    }
+};
+
+NS_END(engine);
