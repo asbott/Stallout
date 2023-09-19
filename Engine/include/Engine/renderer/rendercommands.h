@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mz_vector.hpp"
+
 NS_BEGIN(engine);
 NS_BEGIN(renderer);
 

@@ -19,7 +19,7 @@ Cache_Size get_cache_size() {
     result = GetLogicalProcessorInformation(&buffer[0], &bufferSize);
     assert(result == TRUE && "Failed to get processor information");
 
-    Cache_Size cs;
+    Cache_Size cs{};
 
     for (const auto& info : buffer) {
         if (info.Relationship == RelationCache) {

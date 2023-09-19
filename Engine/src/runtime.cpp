@@ -8,6 +8,7 @@
 #include "Engine/timing.h"
 #include "Engine/renderer/api.h"
 #include "Engine/utils.h"
+#include "Engine/audio/audiocontext.h"
 
 #include "os/modules.h"
 #include "os/io.h"
@@ -31,6 +32,12 @@ s32 runtime_status = 0;
 Array<os::Module*> modules;
 engine::renderer::Render_Context* render_context;
 engine::renderer::Renderer_API* renderer;
+
+engine::audio::Audio_Context* audio_engine;
+engine::audio::audio_clip_t short_clip;
+engine::audio::Audio_Player* short_player = NULL;
+engine::audio::audio_clip_t long_clip;
+engine::audio::Audio_Player* long_player = NULL;
 
 void main_loop();
 
@@ -88,7 +95,21 @@ void start() {
 	log_info("Renderer is ready!\nVendor: {}\nHardware: {}\nDrivers: {}\nVersion: {}\nShading Lang Version: {}",
 	         env.vendor, env.hardware, env.driver, env.version, env.shading_version);
 
+	audio_engine = ST_NEW(engine::audio::Audio_Context);
+
+	short_clip = audio_engine->create_clip_from_file("test.wav");
+	short_player = audio_engine->create_player();
+
+	long_clip = audio_engine->create_clip_from_file("forest.mp3");
+	long_player = audio_engine->create_player();
+
 	runtime_status |= RUNTIME_STATUS_RUNNING;
+
+	short_player->looping = true;
+	long_player->looping = true;
+
+	short_player->play(short_clip);
+	long_player->play(long_clip);
 
 	main_loop();
 
@@ -208,7 +229,12 @@ void main_loop() {
 
 		if (log_fps_timer.record().get_seconds() >= log_fps_intervall) {
 			//log_info("FPS: {:0.0f}\nFrametime: {:0.4f}ms", 1 / last_frame_time.get_seconds(), last_frame_time.get_milliseconds());
+			
 			log_fps_timer.reset();
+		}
+
+		if (short_player->get_timer().record().get_seconds() >= 1.0) {
+			short_player->stop();
 		}
 
 		renderer->clear(engine::renderer::CLEAR_FLAG_COLOR);

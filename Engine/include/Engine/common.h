@@ -39,7 +39,7 @@
 
 #endif
 
-#define INTENTIONAL_CRASH(reason) ST_ASSERT(false, "App intentionally crashed.\nReason: {}", reason)
+#define INTENTIONAL_CRASH(fmt, ...) ST_ASSERT(false, "App intentionally crashed.\nReason: " fmt, __VA_ARGS__)
 
 #define BIT1  1
 #define BIT2  2
@@ -166,4 +166,10 @@ inline const char* __strip_func_sig_ns(const char* func) {
 
 #ifndef _ST_RENDER_BACKEND_OPENGL45
 	#error Only opengl45 is supported at the moment
+#endif
+
+#define MZ_DLL
+
+#ifdef _ST_EXPORT
+	#define MZ_EXPORT
 #endif

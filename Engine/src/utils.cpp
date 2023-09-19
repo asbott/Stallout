@@ -60,15 +60,16 @@ void free_image(void* data) {
     stbi_image_free(data);
 }
 
-void* load_audio_from_memory(void* audio_data, size_t buffer_size, u32* channels, u32* sample_rate, u64* frame_count) {
+void* load_audio_from_memory(void* audio_data, size_t buffer_size, u32* channels, u32* sample_rate, u32* bits_per_sample, u64* frame_count) {
     void* output = NULL;
     
     ma_decoder_config cfg;
-    cfg.format = ma_format_f32;
     memset(&cfg, 0, sizeof(ma_decoder_config));
+    cfg.format = ma_format_s16;
     ma_result result = ma_decode_memory(audio_data, buffer_size, &cfg, frame_count, &output);
     *channels = cfg.channels;
     *sample_rate = cfg.sampleRate;
+    *bits_per_sample = ma_get_bytes_per_sample(cfg.format) * 8;
 
     if (result != MA_SUCCESS) {
         return NULL;
@@ -77,14 +78,16 @@ void* load_audio_from_memory(void* audio_data, size_t buffer_size, u32* channels
     return output;
 }
 
-void* load_audio_from_file(const char* path, u32* channels, u32* sample_rate, u64* frame_count) {
+void* load_audio_from_file(const char* path, u32* channels, u32* sample_rate, u32* bits_per_sample, u64* frame_count) {
     void* output = NULL;
 
     ma_decoder_config cfg;
-    cfg.format = ma_format_f32;
+    memset(&cfg, 0, sizeof(ma_decoder_config));
+    cfg.format = ma_format_s16;
     auto result = ma_decode_file(path, &cfg, frame_count, &output);
     *channels = cfg.channels;
     *sample_rate = cfg.sampleRate;
+    *bits_per_sample = ma_get_bytes_per_sample(cfg.format) * 8;
 
     if (result != MA_SUCCESS) {
         return NULL;

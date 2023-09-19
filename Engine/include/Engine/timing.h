@@ -22,8 +22,16 @@ NS_BEGIN(engine)
     struct ST_API Timer {
         std::chrono::high_resolution_clock::time_point _start;
 
-        Timer();
-        
+        std::chrono::nanoseconds _pausedTime;
+        bool _isPaused;
+
+        Timer() : _isPaused(false), _pausedTime(0) {
+            reset();
+        }
+
+        void pause();
+        void resume();
+        void stop();
         void reset();
         void set_time(f64 seconds);
 

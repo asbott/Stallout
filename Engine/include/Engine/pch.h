@@ -25,9 +25,3 @@
 #include "types.h"
 
 
-#ifdef _MSVC_LANG
-    #pragma warning(disable: 4201)
-#endif
-#include "mz_vector.hpp"
-#include "mz_matrix.hpp"
-#include "mz_algorithms.hpp"

@@ -84,7 +84,7 @@ std::shared_ptr<spdlog::logger> spdlogger;
 void init_logger(std::ostream& ostr) {
     
     #ifdef _ST_CONFIG_DEBUG
-		spdlog::set_pattern("%^[ %H:%M:%S:%e - %s:%!:%# - Thread %t ]\n------------------------------------------------------------------------------------------------%$\n> %v <\n");
+		spdlog::set_pattern("%^------------------------------------------------------------------------------------------------\n| %H:%M:%S:%e - %s:%!:%# - Thread %t \n------------------------------------------------------------------------------------------------%$\n> %v <\n");
     #elif defined(_ST_CONFIG_TEST) || defined(_ST_CONFIG_RELEASE)
     spdlog::set_pattern("%^%v%$\n");
     #else
