@@ -27,8 +27,12 @@ struct ST_API Shared_Buffer {
 
 ST_API void* load_image(void* image_data, int buffer_size, int* width, int* height, int* channels, int forced_channels = 0);
 ST_API void* load_image_from_file(const char* path, int* width, int* height, int* channels, int forced_channels = 0);
-
 ST_API void free_image(void* data);
+
+ST_API void* load_audio_from_memory(void* audio_data, size_t buffer_size, u32* channels, u32* sample_rate, u64* frame_count);
+ST_API void* load_audio_from_file(const char* path, u32* channels, u32* sample_rate, u64* frame_count);
+ST_API void free_audio(void* data);
+
 
 NS_END(utils)
 NS_END(engine)

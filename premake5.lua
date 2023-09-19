@@ -154,7 +154,7 @@ workspace "Stallout"
             "Engine/include/Engine",
             "deps/glad/include",
             "deps/glfw/include",
-            
+            "deps/miniaudio",
             "deps/stb",
             "deps/openal/repo/include"
         }
@@ -291,6 +291,7 @@ workspace "Stallout"
             "deps/glfw/src/vulkan.c",
             "deps/glfw/src/window.c"
         }
+        
 
         filter "system:windows"
             files {
@@ -361,3 +362,33 @@ workspace "Stallout"
         includedirs { "deps/dearimgui" }
 
         defines "IMGUI_IMPL_OPENGL_LOADER_GLAD"
+
+        filter "platforms:*-opengl45*"
+            files {
+                "%{prj.location}/backends/imgui_impl_opengl3*"
+            }
+        filter "platforms:*-vulkan*"
+            files {
+                "%{prj.location}/backends/imgui_impl_vulkan*"
+            }
+        filter "platforms:*-dx11*"
+            files {
+                "%{prj.location}/backends/imgui_impl_dx11*"
+            }
+        filter "platforms:*-dx12*"
+            files {
+                "%{prj.location}/backends/imgui_impl_dx12*"
+            }
+
+        filter "system:windows"
+            files {
+                "%{prj.location}/backends/imgui_impl_win32*"
+            }
+
+        filter "system:linux"
+            pic "On"
+            files {
+                "%{prj.location}/backends/imgui_impl_glfw*"
+            }
+
+            

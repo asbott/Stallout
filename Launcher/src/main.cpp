@@ -16,7 +16,7 @@ int main(/*char** argv, int argc*/) {
 	engine::runtime::start();
 
 	if (engine::runtime::get_status_flags() & RUNTIME_STATUS_ERROR) {
-		log_error("Engine exited with errors");
+		log_error("Engine runtime exited with errors");
 	} else {
 		log_info("Engine runtime exited as expected");
 	}
