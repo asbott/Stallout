@@ -30,8 +30,7 @@ s32 runtime_status = 0;
 
 // Runtime resources
 Array<os::Module*> modules;
-engine::renderer::Render_Context* render_context;
-engine::renderer::Renderer_API* renderer;
+engine::renderer::Render_Context* renderer;
 
 engine::audio::Audio_Context* audio_engine;
 engine::audio::audio_clip_t short_clip;
@@ -86,12 +85,10 @@ void start() {
 	#endif
 
 	// Initialize renderer
-	render_context = ST_NEW(engine::renderer::Render_Context, 1024 * 1000 * 100);
-
-	renderer = ST_NEW(engine::renderer::Renderer_API, render_context);
+	renderer = ST_NEW(engine::renderer::Render_Context, 1024 * 1000 * 100);
 
 	renderer->wait_ready();
-	auto env = renderer->renderer->get_environment();
+	auto env = renderer->get_environment();
 	log_info("Renderer is ready!\nVendor: {}\nHardware: {}\nDrivers: {}\nVersion: {}\nShading Lang Version: {}",
 	         env.vendor, env.hardware, env.driver, env.version, env.shading_version);
 

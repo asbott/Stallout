@@ -1,3 +1,5 @@
+
+
 #include "pch.h"
 
 #include "renderer/rendercontext.h"
@@ -6,27 +8,14 @@
 NS_BEGIN(engine);
 NS_BEGIN(renderer);
 
-namespace mem = engine::Global_Allocator;
-
-
-byte_t* allocate_buffer(size_t buffer_size) {
-    return (byte_t*)mem::allocate(buffer_size, GLOBAL_ALLOC_FLAG_LARGE & GLOBAL_ALLOC_FLAG_STATIC);
-}
-
 Render_Context::Render_Context(size_t buffer_size)
-    : _buffer_size(buffer_size), 
-      _buffer_allocator(allocate_buffer(buffer_size), buffer_size),
-      _main_buffer(allocate_buffer(buffer_size)),
-      _id_allocator(3000000, sizeof(Resource_ID)),
-      _mapping_promise_allocator(sizeof(_Mapping_Promise) * 1000, sizeof(_Mapping_Promise)) {
-
-        _render_thread = std::thread([&]() {__enter_loop();});
+    : _id_allocator(3000000, sizeof(Resource_ID)),
+      _mapping_promise_allocator(sizeof(_Mapping_Promise) * 1000, sizeof(_Mapping_Promise)),
+      _render_thread(buffer_size, [&](std::mutex* mtx) {__enter_loop(mtx);}) {
+    _render_thread.set_command_type<Render_Command>();
 }
 Render_Context::~Render_Context() {
-    this->swap_buffers();
-    _running = false;
-    _render_condition.notify_all();
-    _render_thread.join();
+    _render_thread.stop();    
 }
 
 void Render_Context::wait_ready() {
@@ -36,15 +25,6 @@ void Render_Context::wait_ready() {
     _ready_cond.wait(lock, [&]() { return _ready; });
 }
 
-void Render_Context::_send_command(Render_Command command, const void* data, size_t data_size) {
-    ST_ASSERT(_buffer_allocator._next + command.size <= _buffer_allocator._tail, "Command buffer overflow. Please allocate more.\nFree: {}kb/{}kb\nRequested: {}kb", (_buffer_size - (_buffer_allocator._tail - _buffer_allocator._next)) * 1000.0, _buffer_size * 1000.0, command.size * 1000.0);
-    std::lock_guard lock(_buffer_mutex);
-    byte_t* command_buffer = (byte_t*)_buffer_allocator.allocate(command.size);
-    memcpy(command_buffer, &command, sizeof(Render_Command));
-
-    // Should be an option to pass uninitialized or no data
-    if(data && data_size) memcpy(command_buffer + sizeof(Render_Command), data, data_size);
-}
 
 Resource_Handle Render_Context::create(Resource_Type resource_type, const void* data, size_t data_size) {
     size_t command_size = sizeof(Render_Command) + data_size;
@@ -59,7 +39,7 @@ Resource_Handle Render_Context::create(Resource_Type resource_type, const void* 
     command_header.handle = handle;
     command_header.size = command_size;       
 
-    _send_command(command_header, data, data_size);
+    _render_thread.send(&command_header, data, data_size);
 
     return handle;
 }
@@ -73,9 +53,9 @@ void Render_Context::submit(Render_Message message, const void* data, size_t dat
     command_header.type = RENDER_COMMAND_TYPE_SUBMIT;
     command_header.message = message;
     command_header.size = command_size;
-    _send_command(command_header, data, data_size);
-}
+    _render_thread.send(&command_header, data, data_size);
 
+}
 void Render_Context::set(Resource_Handle hnd, Resource_Type resource_type, const void* data, size_t data_size) {
     size_t command_size = sizeof(Render_Command) + data_size;
 
@@ -89,7 +69,7 @@ void Render_Context::set(Resource_Handle hnd, Resource_Type resource_type, const
     command_header.handle = hnd;
     command_header.size = command_size;       
 
-    _send_command(command_header, data, data_size);
+    _render_thread.send(&command_header, data, data_size);
 }
 
 void Render_Context::destroy(Resource_Handle hnd) {
@@ -98,7 +78,7 @@ void Render_Context::destroy(Resource_Handle hnd) {
     command_header.message = RENDER_MESSAGE_DESTROY;
     command_header.size = sizeof(Render_Command);
     command_header.handle = hnd;
-    _send_command(command_header, NULL, 0);
+    _render_thread.send(&command_header, NULL, 0);
 }
 
 void Render_Context::map_buffer(Resource_Handle buffer_hnd, Buffer_Access_Mode access_Mode, const std::function<void(void*)>& result_callback) {
@@ -137,18 +117,7 @@ Render_Context::Environment Render_Context::get_environment() const {
 }
 
 void Render_Context::swap_buffers() {
-    {
-        std::unique_lock lock(_buffer_mutex);
-
-        _swap_condition.wait(lock, [&]() { return _buffer_state == COMMAND_BUFFER_STATE_OLD; });
-
-        _buffer_usage = (size_t)(_buffer_allocator._next - _buffer_allocator._head);;
-
-        _main_buffer = (byte_t*)_buffer_allocator.swap_buffer(_main_buffer, _buffer_size);
-
-        _buffer_state = COMMAND_BUFFER_STATE_NEW;
-        _render_condition.notify_one();
-    }
+    _render_thread.swap();
 
     for (const auto& [hnd, promise] : _mapping_promises) {
         void* result = promise->wait();
@@ -160,7 +129,7 @@ void Render_Context::swap_buffers() {
     _mapping_promises.clear();
 }
 
-void Render_Context::__enter_loop() {
+void Render_Context::__enter_loop(std::mutex* buffer_mutex) {
     Timer frame_timer;
 
     os::Window_Init_Spec wnd_spec;
@@ -169,29 +138,23 @@ void Render_Context::__enter_loop() {
     
     this->__internal_init();
 
-    while (_running || _buffer_state == COMMAND_BUFFER_STATE_NEW) {
+    _ready = true;
+    _ready_cond.notify_all();
+
+    while (!_render_thread.should_exit()) {
        
-        std::unique_lock lock(_buffer_mutex);
+        std::unique_lock lock(*buffer_mutex);
         _frame_time = frame_timer.record();
         frame_timer.reset();
-        _render_condition.wait(lock, [&]() { 
-            return _buffer_state == COMMAND_BUFFER_STATE_NEW || (!_running); 
-        });
 
-        if (_buffer_state == COMMAND_BUFFER_STATE_OLD) break;
+        _render_thread.wait_swap(&lock);
 
         this->__internal_render();
 
         _os_window->swap_buffers();
 
-        _buffer_state = COMMAND_BUFFER_STATE_OLD;
-        _swap_condition.notify_one();
-        
+        _render_thread.notify_buffer_finished();
     }   
-
-    if (_buffer_state == COMMAND_BUFFER_STATE_NEW) {
-        this->__internal_render();
-    }
 
     this->__internal_shutdown();
 

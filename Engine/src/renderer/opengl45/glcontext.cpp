@@ -1059,34 +1059,29 @@ void Render_Context::__internal_init() {
     _env.hardware = (const char*)glGetString(GL_RENDERER);
     _env.driver = (const char*)glGetString(GL_VERSION);
     _env.shading_version = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
-
-    _ready = true;
-    _ready_cond.notify_all();
-    
 }
 void Render_Context::__internal_render() {
     auto& state = *(GL_State*)__internal;
 
-    for (byte_t* next = _main_buffer; next < _main_buffer + _buffer_usage; next += ((Render_Command*)next)->size) {
-        auto* header = (Render_Command*)next;
-        void* data = next + sizeof(Render_Command);
-
+    _render_thread.traverse_commands<Render_Command>([&](Render_Command* header, void* data) {
         switch (header->type)
         {
-        case RENDER_COMMAND_TYPE_CREATE:
-            handle_creation(state, header, data);
-            break;
-        case RENDER_COMMAND_TYPE_SUBMIT:
-            handle_message(state, header ,data);
-            break;
-        case RENDER_COMMAND_TYPE_SET:
-            handle_set(state, header ,data);
-            break;
-        default:
-            ST_ASSERT(false);
-            break;
+            case RENDER_COMMAND_TYPE_CREATE:
+                handle_creation(state, header, data);
+                break;
+            case RENDER_COMMAND_TYPE_SUBMIT:
+                handle_message(state, header ,data);
+                break;
+            case RENDER_COMMAND_TYPE_SET:
+                handle_set(state, header ,data);
+                break;
+            default:
+                ST_ASSERT(false);
+                break;
         }
-    }
+
+        return header->size;
+    });
 
     
 }
