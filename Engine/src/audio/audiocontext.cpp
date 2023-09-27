@@ -10,6 +10,8 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 
+
+
 bool check_al_errors(const char* filename, u32 line)
 {
     ALenum error = alGetError();
@@ -59,10 +61,17 @@ std::enable_if_t<std::is_void_v<Ret>, void> al_call_impl(Func&& func, const char
 
 // The macro itself
 #define AL_CALL(call) al_call_impl([&]() { return call; }, __FILE__, __LINE__)
+
+#else
+#define AL_CALL(call) call
 #endif
+
+
 
 NS_BEGIN(engine);
 NS_BEGIN(audio);
+
+using namespace utils;
 
 Timer Audio_Player::get_timer() {
     ST_ASSERT(AL_CALL(alIsSource(_source_id)), "Invalid source");
@@ -207,7 +216,7 @@ audio_clip_t Audio_Context::create_clip(void* data, u32 channels, u32 bits_per_s
     ALuint buffer;
     AL_CALL(alGenBuffers(1, &buffer));
 
-    ALenum format;
+    ALenum format = 0;
     if(channels == 1 && bits_per_sample == 8)
         format = AL_FORMAT_MONO8;
     else if(channels == 1 && bits_per_sample == 16)
@@ -238,6 +247,7 @@ void Audio_Context::destroy_clip(audio_clip_t clip) {
     ST_ASSERT(AL_CALL(alIsBuffer(clip)), "Invalid audio clip handle");
     alDeleteBuffers(1, &clip);
     auto err = alGetError();
+    (void)err;
     ST_ASSERT(err != AL_INVALID_OPERATION, "Tried destroying a clip that's in use; make sure it's stopped before destroying.");
     ST_ASSERT(err == AL_NO_ERROR, "OpenAL Error");
 }

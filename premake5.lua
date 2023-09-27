@@ -36,10 +36,14 @@ function module_project(name)
     stallout_project(name)
     kind "SharedLib"
 
-    includedirs "Engine/include"
+    includedirs {
+        "Engine/include",
+        "deps/dearimgui"
+    }
 
     links {
-        "Engine"
+        "Engine",
+        "dearimgui"
     }
 
     postbuildcommands {
@@ -61,7 +65,8 @@ workspace "Stallout"
     defines {
         "_CRT_SECURE_NO_WARNINGS",
         "_CRTLDBG_REPORT_FLAG",
-        "FMT_HEADER_ONLY"
+        "FMT_HEADER_ONLY",
+        "IMGUI_IMPL_OPENGL_LOADER_XXX"
     }
 
     filter "platforms:*-opengl45*"
@@ -73,22 +78,34 @@ workspace "Stallout"
     filter "platforms:*-dx12*"
         defines { "_ST_RENDER_BACKEND_DX12" }
     filter "platforms:*-runtests*"
-        defines { "_ST_RUN_TESTS" }
+        defines { "_ST_RUN_TESTS", "ST_ENABLE_MEMORY_TRACKING" }
 
     filter "configurations:Debug*"
-        defines {"_ST_CONFIG_DEBUG", "_ST_ENABLE_GL_DEBUG_CONTEXT"}
+        defines {
+            "_ST_CONFIG_DEBUG", 
+            "_ST_ENABLE_GL_DEBUG_CONTEXT",
+            "DEBUG",
+            "_DEBUG",
+            "ST_ENABLE_MEMORY_DEBUG"
+        }
         runtime "Debug"
         symbols "On"
         floatingpoint "Default"
 
     filter "configurations:Test*"
-        defines  "_ST_CONFIG_TEST"
-        runtime  "Release"
+        defines  {
+            "_ST_CONFIG_TEST"
+        }
+        runtime "Release"
         optimize "Debug"
         floatingpoint "Default"
 
     filter "configurations:Release*"
-        defines  { "_ST_CONFIG_RELEASE", "_ST_DISABLE_ASSERTS", "NDEBUG" }
+        defines  { 
+            "_ST_CONFIG_RELEASE", 
+            "_ST_DISABLE_ASSERTS", 
+            "NDEBUG" 
+        }
         runtime  "Release"
         symbols  "Off"
         optimize "Speed"
@@ -153,6 +170,7 @@ workspace "Stallout"
         includedirs {
             "Engine/include/Engine",
             "deps/glad/include",
+            "deps/dearimgui",
             "deps/glfw/include",
             "deps/miniaudio",
             "deps/stb",
@@ -175,7 +193,7 @@ workspace "Stallout"
         files {
             "%{prj.location}/include/os/*.h",
             "%{prj.location}/src/os/*.cpp",
-            "%{prj.location}/src/renderer/rendercontext.cpp"
+            "%{prj.location}/src/renderer/*"
         }
 
         filter "platforms:*-opengl45*"
@@ -359,9 +377,9 @@ workspace "Stallout"
             "%{prj.location}/*.cpp"
         }
     
-        includedirs { "deps/dearimgui" }
-
-        defines "IMGUI_IMPL_OPENGL_LOADER_GLAD"
+        includedirs { 
+            "deps/dearimgui"
+        }
 
         filter "platforms:*-opengl45*"
             files {

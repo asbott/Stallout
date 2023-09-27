@@ -65,7 +65,7 @@ struct Double_Buffered_Thread {
     const size_t _buffer_size;
     std::atomic_uint64_t _buffer_usage = 0;
     size_t _command_size = 0;
-    bool _running;
+    bool _running = true;
     Thread_Run_State thread_run_state;
 
     Command_Buffer_State _buffer_state = COMMAND_BUFFER_STATE_OLD;
@@ -105,6 +105,8 @@ struct Double_Buffered_Thread {
         }
     };
 };
+
+
 
 
 NS_END(utils)

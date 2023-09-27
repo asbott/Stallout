@@ -2,12 +2,14 @@
 
 #include "mz_vector.hpp"
 #include "Engine/timing.h"
+#include "Engine/utils.h"
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4251)
 #endif
 
-
+// TODO: #performance #audio
+// Offload OpenAL calls to a Double_Buffered_Thread
 
 
 struct ALCdevice;

@@ -4,8 +4,6 @@
 
 #include "Engine/memory.h"
 
-#include "Windows.h"
-
 NS_BEGIN(os)
 NS_BEGIN(io)
 
@@ -149,23 +147,22 @@ Io_Status count_directory_entries(const char* dir_path, size_t* result) {
     return IO_STATUS_OK;
 }
 
-Io_Status scan_directory(const char* dir_path, char** result) {
-    // Assumes result is an allocated array of char* with enough space
+Io_Status scan_directory(const char* dir_path, char** result, size_t max_num_result, size_t max_path) {
     if (!result) {
         return IO_STATUS_INVALID_BUFFER;
     }
 
-    // Create a new buffer to hold dir_path with "\\*" appended
+    // Assumes *result has allocated max_num_result * max_path
+
     size_t buffer_len = strlen(dir_path) + 3;  // Two characters for "\\*" and one for null-terminator
     char* search_path = (char*)ST_MEM(buffer_len);
 
     strcpy(search_path, dir_path);
-    strcat(search_path, "\\*");
+    strcpy(search_path + strlen(dir_path), "\\*");
 
     WIN32_FIND_DATAA findFileData;
     HANDLE hFind = FindFirstFileA(search_path, &findFileData);
 
-    // Cleanup the allocated buffer
     ST_FREE(search_path, buffer_len);
 
     if (hFind == INVALID_HANDLE_VALUE) {
@@ -174,11 +171,23 @@ Io_Status scan_directory(const char* dir_path, char** result) {
 
     int i = 0;
     do {
-        result[i] = _strdup(findFileData.cFileName);
+        size_t name_len = std::min(strlen(findFileData.cFileName), max_path - 1);
+        memcpy(result[i], findFileData.cFileName, name_len);
+        result[i][name_len] = '\0';
+
         i++;
-    } while (FindNextFileA(hFind, &findFileData) != 0);
+    } while (FindNextFileA(hFind, &findFileData) != 0 && i < max_num_result);
 
     FindClose(hFind);
+    return IO_STATUS_OK;
+}
+
+Io_Status to_absolute(const char* path, char* abs_path, size_t max_path) {
+    DWORD length = GetFullPathNameA(path, (DWORD)max_path, abs_path, NULL);
+    if (length == 0) {
+        // Handle error
+        return IO_STATUS_INVALID_PATH;
+    }
     return IO_STATUS_OK;
 }
 

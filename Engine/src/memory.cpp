@@ -7,6 +7,37 @@ NS_BEGIN(engine);
 
 namespace Global_Allocator {
 
+    enum _Allocator_Type {
+        ALLOC_TYPE_SMALL8,
+        ALLOC_TYPE_SMALL16,
+        ALLOC_TYPE_COMMON,
+        ALLOC_TYPE_GROWING,
+        ALLOC_TYPE_MALLOC
+    };
+#ifdef ST_ENABLE_MEMORY_DEBUG
+
+    const char*_alloc_type_str(_Allocator_Type type) {
+        switch (type) {
+            case ALLOC_TYPE_SMALL8: return "SMALL8";
+            case ALLOC_TYPE_SMALL16: return "SMALL16";
+            case ALLOC_TYPE_COMMON: return "COMMON";
+            case ALLOC_TYPE_GROWING: return "GROWING";
+            case ALLOC_TYPE_MALLOC: return "MALLOC";
+            default: INTENTIONAL_CRASH("Unhandled enum"); return "";
+        }
+    }
+
+    struct _Pointer_Info {
+        uintptr_t location;
+        size_t size;
+        _Allocator_Type type;
+    };
+
+    std::unordered_map<uintptr_t, _Pointer_Info> _debug_pointers;
+    std::unordered_set<uintptr_t> _allocated_before_init;
+
+#endif
+
     struct Allocs {
 
         Allocs(size_t preallocated) 
@@ -27,43 +58,64 @@ namespace Global_Allocator {
         std::mutex mutex;
     }* allocs = NULL;
     
-     IN_DEBUG_ONLY(
-        size_t used_mem = 0;
-    );
+#ifdef ST_ENABLE_MEMORY_TRACKING
+    size_t used_mem = 0;
+#endif
 
-    void init(size_t preallocated ) {
+    void init(size_t preallocated) {
         allocs = new Allocs(preallocated);
     }
-
     bool is_initialized() {
         return allocs != NULL;
     }
 
+#ifndef ST_ENABLE_MEMORY_LOGGING
     void* allocate(size_t sz, Global_Alloc_Flag flags) {
+#else
+    void* allocate(size_t sz, _ST_LOCATION loc, Global_Alloc_Flag flags) {
+#endif
+        
+        if (!allocs) {
+            void* p = malloc(sz);
+#ifdef ST_ENABLE_MEMORY_DEBUG
+            _allocated_before_init.emplace((uintptr_t)p);
+#endif
+            return p;
+        }
+
         if (!sz) return nullptr;
+
+        _Allocator_Type type = ALLOC_TYPE_COMMON;
+
         std::lock_guard l(allocs->mutex);
         void* mem = NULL;
 
+        // ?
         if (sz == SIZE_MAX) return NULL;
 
         if (!(flags & GLOBAL_ALLOC_FLAG_FORBID_SMALL_ALLOC)) {
             if (sz <= 8) {
                 mem = allocs->small_allocator_8.allocate(sz);
+                type = ALLOC_TYPE_SMALL8;
             } else if (sz <= 16) {
                 mem = allocs->small_allocator_16.allocate(sz);
+                type = ALLOC_TYPE_SMALL16;
             }
         }
 
         if ((flags & GLOBAL_ALLOC_FLAG_STATIC) && (flags & GLOBAL_ALLOC_FLAG_LARGE)) {
             mem = malloc(sz); // This doesn't need to be fast because its large and static so just let os handle it
+            type = ALLOC_TYPE_MALLOC;
         }
 
         if (!mem) {
             mem = allocs->common_allocator.allocate(sz);
+            type = ALLOC_TYPE_COMMON;
         }
 
         if (!mem && sz <= allocs->growing_allocator._max_bin_size) {
             mem = allocs->growing_allocator.allocate(sz);
+            type = ALLOC_TYPE_GROWING;
         }
 
         if (!mem) {
@@ -73,39 +125,93 @@ namespace Global_Allocator {
             //       when for example a small allocator is full (once)
 
             mem = malloc(sz);
+            type = ALLOC_TYPE_COMMON;
         }
-        IN_DEBUG_ONLY(
-            if(mem) used_mem += sz;
-        );
+        (void)type;
+#ifdef ST_ENABLE_MEMORY_TRACKING
+        if(mem) used_mem += sz;
+#endif
+#ifdef ST_ENABLE_MEMORY_LOGGING
+        log_debug("Global Memory Alloc\nAddress: {}\nBytes: {}\nType: {}\nLocation: {}", (u64)mem, sz, _alloc_type_str(type), loc);
+#endif
+#ifdef ST_ENABLE_MEMORY_DEBUG
+    #ifdef ST_ENABLE_MEMORY_DEBUG_EXTRA
+        for (const auto& [p, info] : _debug_pointers) {
+            // If this is hit its likely an issue with the allocators
+            // or in worst case a very UB consequence of bad deallocation
+            ST_ASSERT(!((uintptr_t)mem >= p && (uintptr_t)mem < p + info.size), "INVALID ALLOCATION");
+        }
+    #endif
+
+        _debug_pointers[(uintptr_t)mem] = { (uintptr_t)mem, sz, type };
+#endif
         return mem;
     }
-
+#ifndef ST_ENABLE_MEMORY_LOGGING
     void deallocate(void* p, size_t sz) {
+#else
+    void deallocate(void* p, size_t sz, _ST_LOCATION loc) {
+#endif
+
+    #ifdef ST_ENABLE_MEMORY_DEBUG
+
+        if (_allocated_before_init.contains((uintptr_t)p)) {
+            free(p);
+#ifdef ST_ENABLE_MEMORY_LOGGING
+            log_debug("Freeing pointer allocated before init: {}", (uintptr_t)p);
+#endif
+            return;
+        }
+
+        ST_ASSERT(_debug_pointers.contains((uintptr_t)p), "Bad deallocation: {} was not returned by global allocator", (uintptr_t)p);
+
+        ST_ASSERT(_debug_pointers[(uintptr_t)p].size == sz, "Bad deallocation: size mismatch");
+    #endif
+
+#ifdef ST_ENABLE_MEMORY_LOGGING
+        log_debug("Global Memory Dealloc\nAddress: {}\nBytes: {}\nStored Type: {}\nLocation: {}", (u64)p, sz, _alloc_type_str(_debug_pointers[(uintptr_t)p].type), loc);
+#endif
+        _Allocator_Type dealloc_type = ALLOC_TYPE_COMMON;
+
         std::lock_guard l(allocs->mutex);
         ST_DEBUG_ASSERT(p != nullptr, "Cannot deallocate null");
         if (allocs->small_allocator_8.contains(p)) {
             allocs->small_allocator_8.deallocate(p, sz);
+            dealloc_type = ALLOC_TYPE_SMALL8;
         } else if (allocs->small_allocator_16.contains(p)) {
             allocs->small_allocator_16.deallocate(p, sz);
+            dealloc_type = ALLOC_TYPE_SMALL16;
         } else if (allocs->common_allocator.contains(p)) {
             allocs->common_allocator.deallocate(p, sz);
+            dealloc_type = ALLOC_TYPE_COMMON;
+        } else if (allocs->growing_allocator.contains(p)) {
+            allocs->growing_allocator.deallocate(p, sz);
+            dealloc_type = ALLOC_TYPE_GROWING;
         } else {
-            // TODO: Maybe need to do more
+            // TODO: Maybe need to do more (2023-09-24: ?)
             free(p);
+            dealloc_type = ALLOC_TYPE_MALLOC;
         }
-        IN_DEBUG_ONLY(
-            used_mem -= sz;
-        );
+        (void)dealloc_type;
+#ifdef ST_ENABLE_MEMORY_DEBUG
+        // If this hits it's very likely mismanagement of memory
+        // in the allocator, but if you're unlucky it's nightmare
+        // UB
+        ST_ASSERT(dealloc_type == _debug_pointers[(uintptr_t)p].type, "DEALLOCATION TYPE MISMATCH\nAllocated in '{}', deallocated in '{}'", _alloc_type_str(_debug_pointers[(uintptr_t)p].type), _alloc_type_str(dealloc_type));
+        _debug_pointers.erase((uintptr_t)p);
+#endif
+
+#ifdef ST_ENABLE_MEMORY_TRACKING
+    used_mem -= sz;
+#endif
     }
 
-    IN_DEBUG_ONLY (
-        size_t get_used_mem() {
-            return used_mem;
-        }
-    );
+#ifdef ST_ENABLE_MEMORY_TRACKING
+    size_t get_used_mem() {
+        return used_mem;
+    }
+#endif
 }
-
-
 
 
 
@@ -307,7 +413,7 @@ bool Growing_Bin_Allocator::contains(void* p) const {
 
 Linear_Allocator::Linear_Allocator(size_t buffer_size)
     : _is_buffer_owner(true) {
-    _head = (byte_t*)Global_Allocator::allocate(buffer_size);
+    _head = (byte_t*)ST_MEM(buffer_size);
     _tail = _head + buffer_size;
     _next = _head;
 }
@@ -317,7 +423,7 @@ Linear_Allocator::Linear_Allocator(void* existing_buffer, size_t buffer_size)
 }
 
 Linear_Allocator::~Linear_Allocator() {
-    if (_is_buffer_owner) Global_Allocator::deallocate(_head, (size_t)(_tail - _head));
+    if (_is_buffer_owner) ST_FREE(_head, (size_t)(_tail - _head));
 }
 
 void* Linear_Allocator::allocate(size_t sz) {
@@ -336,7 +442,7 @@ void Linear_Allocator::reset() {
 
 void Linear_Allocator::set_buffer(void* buffer, size_t buffer_size) {
     ST_DEBUG_ASSERT(buffer);
-    if (_is_buffer_owner) Global_Allocator::deallocate(_head, (size_t)(_tail-_head));
+    if (_is_buffer_owner) ST_FREE(_head, (size_t)(_tail-_head));
     
     _head = (byte_t*)buffer;
     _tail = _head + buffer_size;

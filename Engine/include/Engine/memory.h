@@ -30,31 +30,41 @@
 */
 
 
-// TODO:
-// Store meta pointer stuff so program can crash
-// when user allocate or deallocate incorrectly
-// to avoid mega ub everywhere.
-// Probably only in global allocator as when
-// someone use custom allocation the responsibility
-// should be on them
+
+
+//#define DISABLE_ALLOCATORS
+//#define ST_ENABLE_MEMORY_DEBUG
+//#define ST_ENABLE_MEMORY_DEBUG_EXTRA
+//#define ST_ENABLE_MEMORY_TRACKING
+//#define ST_ENABLE_MEMORY_LOGGING
 
 #ifndef DISABLE_ALLOCATORS
 
-#define ST_MEM(sz) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::allocate(sz) : malloc(sz))
-#define ST_FREE(p, sz) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::deallocate(p, sz) : free(p))
+    #ifndef ST_ENABLE_MEMORY_LOGGING
+        #define ST_MEM(sz) (::engine::Global_Allocator::allocate(sz))
+        #define ST_MEMF(sz, flags) (::engine::Global_Allocator::allocate(sz, flags))
+        #define ST_FREE(p, sz) (::engine::Global_Allocator::deallocate(p, sz))
+        #define ST_NEW(t, ...) new(::engine::Global_Allocator::allocate(sizeof(t))) t
+    #else
+        #define ST_MEM(sz) (::engine::Global_Allocator::allocate(sz, _ST_PASS_LOCATION))
+        #define ST_MEMF(sz, flags) (::engine::Global_Allocator::allocate(sz, _ST_PASS_LOCATION, flags))
+        #define ST_FREE(p, sz) (::engine::Global_Allocator::deallocate(p, sz, _ST_PASS_LOCATION))
+        #define ST_NEW(t, ...) new(::engine::Global_Allocator::allocate(sizeof(t), _ST_PASS_LOCATION)) t
+    #endif
 
-#define ST_NEW(st, ...) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::allocate_and_construct<st>(__VA_ARGS__) : new st(__VA_ARGS__))
-#define ST_DELETE(p) (::engine::Global_Allocator::is_initialized() ? ::engine::Global_Allocator::deallocate_and_deconstruct(p) : delete p)
+    #define ST_DELETE(p) (::engine::Global_Allocator::deallocate_and_deconstruct(p))
 
 #else
 
-#define ST_MEM(sz) (malloc(sz))
-#define ST_FREE(p, sz) (free(p))
-
-#define ST_NEW(st, ...) (new st(__VA_ARGS__))
-#define ST_DELETE(p) (delete p)
+    #define ST_MEM(sz) (malloc(sz))
+    #define ST_FREE(p, sz) {(free(p)); (void)(sz);}
+    #define ST_NEW(st, ...) (new st(__VA_ARGS__))
+    #define ST_DELETE(p) (delete p)
 
 #endif
+
+#define stnew ST_NEW
+#define stdelete ST_DELETE
 
 NS_BEGIN(engine);
 
@@ -67,21 +77,28 @@ enum Global_Alloc_Flag_Impl {
     GLOBAL_ALLOC_FLAG_LARGE = BIT(4)
 };
 
+
+
 namespace Global_Allocator {
 
     ST_API void init(size_t preallocated = 1024 * 1000 * 1000);
-
     ST_API bool is_initialized();
 
+#ifndef ST_ENABLE_MEMORY_LOGGING
     ST_API void* allocate(size_t sz, Global_Alloc_Flag flags = GLOBAL_ALLOC_FLAG_NONE);
     ST_API void deallocate(void* p, size_t sz);
-    IN_DEBUG_ONLY(
-        ST_API size_t get_used_mem();
-    );
+#else
+    ST_API void* allocate(size_t sz, _ST_LOCATION loc, Global_Alloc_Flag flags = GLOBAL_ALLOC_FLAG_NONE);
+    ST_API void deallocate(void* p, size_t sz, _ST_LOCATION loc);
+#endif
+
+#ifdef ST_ENABLE_MEMORY_TRACKING
+    ST_API size_t get_used_mem();
+#endif
 
     template <typename type_t, typename ...args_t>
     inline type_t* allocate_and_construct(args_t&&... args) {
-        void* mem = Global_Allocator::allocate(sizeof(type_t));
+        void* mem = ST_MEM(sizeof(type_t));
         
         if (!mem) return nullptr;
 
@@ -92,7 +109,7 @@ namespace Global_Allocator {
     inline void deallocate_and_deconstruct(type_t* p) {
         p->~type_t();
         
-        Global_Allocator::deallocate(p, sizeof(type_t));
+        ST_FREE(p, sizeof(type_t));
     }
 
 
@@ -109,20 +126,22 @@ namespace Global_Allocator {
             typedef STL_Global_Allocator<U> other;
         };
 
-        STL_Global_Allocator() noexcept {}
+        STL_Global_Allocator() noexcept {
+            
+        }
 
         template <class U>
         constexpr STL_Global_Allocator(const STL_Global_Allocator<U>&) noexcept {}
 
         T* allocate(size_type n) {
             if (n > max_size()) throw std::bad_alloc();
-            auto p = static_cast<T*>(Global_Allocator::allocate(n * sizeof(T)));
+            auto p = static_cast<T*>(ST_MEM(n * sizeof(T)));
             if (!p) throw std::bad_alloc();
             return p;
         }
 
         void deallocate(T* p, size_type n) noexcept {
-            Global_Allocator::deallocate(p, n * sizeof(T));
+            ST_FREE(p, n * sizeof(T));
         }
 
         template <class U, class... Args>

@@ -21,7 +21,8 @@ typedef Resource_ID* Resource_Handle;
 enum Render_Command_Type : u8 {
     RENDER_COMMAND_TYPE_CREATE,
     RENDER_COMMAND_TYPE_SUBMIT,
-    RENDER_COMMAND_TYPE_SET
+    RENDER_COMMAND_TYPE_SET,
+    RENDER_COMMAND_TYPE_WINDOW_CALL
 };
 enum Render_Message : u32 {
     RENDER_MESSAGE_CLEAR,
@@ -30,6 +31,12 @@ enum Render_Message : u32 {
     RENDER_MESSAGE_BIND_TEXTURE2D,
     RENDER_MESSAGE_DRAW_INDEXED,
     RENDER_MESSAGE_DESTROY,
+    RENDER_MESSAGE_SET_BLENDING,
+    RENDER_MESSAGE_TOGGLE,
+    RENDER_MESSAGE_SET_POLYGON_MODE,
+    RENDER_MESSAGE_SET_VIEWPORT,
+    RENDER_MESSAGE_SET_SCISSOR_BOX,
+    RENDER_MESSAGE_SET_TARGET,
 
     __INTERNAL_RENDER_MESSAGE_MAP_BUFFER,
     __INTERNAL_RENDER_MESSAGE_UNMAP_BUFFER
@@ -123,6 +130,11 @@ enum Texture2D_Format {
     TEXTURE2D_FORMAT_RGBA_INTEGER,
     TEXTURE2D_FORMAT_BGRA_INTEGER,
 };
+struct Render_Window;
+struct Window_Call {
+    std::function<void(os::Window*)>* fn; // Needs to be dynamically allocated
+    Render_Window* caller;
+};
 
 struct Buffer_Layout_Entry {
     Buffer_Layout_Entry(size_t ncomponents, Data_Type data_type, bool normalized = false)
@@ -174,6 +186,79 @@ enum Mipmap_Mode {
     MIPMAP_MODE_NONE
 };
 
+enum Blend_Equation {
+    BLEND_EQUATION_ADD,
+    BLEND_EQUATION_SUBTRACT,
+    BLEND_EQUATION_REVERSE_SUBTRACT,
+    BLEND_EQUATION_MAX,
+    BLEND_EQUATION_MIN
+};
+
+enum Blend_Func_Factor {
+    BLEND_FACTOR_ZERO,
+    BLEND_FACTOR_ONE,
+    BLEND_FACTOR_SRC_COLOR,
+    BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+    BLEND_FACTOR_DST_COLOR,
+    BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+    BLEND_FACTOR_SRC_ALPHA,
+    BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    BLEND_FACTOR_DST_ALPHA,
+    BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+    BLEND_FACTOR_CONSTANT_COLOR,
+    BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+    BLEND_FACTOR_CONSTANT_ALPHA,
+    BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA,
+    BLEND_FACTOR_SRC_ALPHA_SATURATE,
+    BLEND_FACTOR_SRC1_COLOR,
+    BLEND_FACTOR_ONE_MINUS_SRC1_COLOR,
+    BLEND_FACTOR_SRC1_ALPHA,
+    BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA
+};
+
+enum Renderer_Setting_Flags : s32 {
+    RENDERER_SETTING_UNSET = 0,
+    RENDERER_SETTING_CULLING = BIT(1),
+    RENDERER_SETTING_DEPTH_TESTING = BIT(2),
+    RENDERER_SETTING_STENCIL_TESTING = BIT(3),
+    RENDERER_SETTING_PRIMITIVE_RESTART = BIT(4),
+    RENDERER_SETTING_SCISSOR_TESTING = BIT(5),
+
+    RENDERER_SETTING_MAX,
+};
+FLAGIFY(Renderer_Setting_Flags);
+
+enum Query_Type : s32 {
+    QUERY_TYPE_RENDERER_SETTINGS_FLAGS,
+    QUERY_TYPE_BLENDING_EQUATION,
+    QUERY_TYPE_BLENDING_SRC_COLOR,
+    QUERY_TYPE_BLENDING_DST_COLOR,
+    QUERY_TYPE_BLENDING_SRC_ALPHA,
+    QUERY_TYPE_BLENDING_DST_ALPHA,
+    QUERY_TYPE_POLY_FACE,
+    QUERY_TYPE_POLY_MODE_FRONT,
+    QUERY_TYPE_POLY_MODE_BACK,
+    QUERY_TYPE_VIEWPORT,
+    QUERY_TYPE_TEXTURE_SLOT, // This + x gives the resource handle of the texture bound to slot x (NULL if none)
+    QUERY_TYPE_NEXT = QUERY_TYPE_TEXTURE_SLOT + 1000,
+};
+
+
+enum Polygon_Face {
+    POLY_FACE_FRONT,
+    POLY_FACE_BACK,
+    POLY_FACE_FRONT_AND_BACK
+};
+
+enum Polygon_Mode {
+    POLY_MODE_FILL,
+    POLY_MODE_LINE,
+    POLY_MODE_POINT,
+};
+struct Render_Window;
+
+
+
 // Specification classes for render commands
 NS_BEGIN(spec);
 NS_BEGIN(submit);
@@ -209,6 +294,7 @@ struct Bind_Texture2D {
     static const Render_Message message = RENDER_MESSAGE_BIND_TEXTURE2D;
 };
 
+
 struct Draw_Indexed {
     Resource_Handle vbo, ibo, layout, shader;
 
@@ -217,7 +303,60 @@ struct Draw_Indexed {
     // Must be ubyte, ushort or uint
     Data_Type index_data_type;
 
+    size_t index_count;
+
+    // Where at which index of indices in the index
+    // buffer to start from
+    size_t indices_offset = 0;
+
     static const Render_Message message = RENDER_MESSAGE_DRAW_INDEXED;
+};
+
+struct Set_Blending {
+    Blend_Equation equation;
+
+    Blend_Func_Factor src_color_factor;
+    Blend_Func_Factor dst_color_factor;
+    Blend_Func_Factor src_alpha_factor;
+    Blend_Func_Factor dst_alpha_factor;
+
+    static const Render_Message message = RENDER_MESSAGE_SET_BLENDING;
+};
+
+struct Toggle {
+    bool enabled;
+    Renderer_Setting_Flags settings = RENDERER_SETTING_UNSET;
+
+    static const Render_Message message = RENDER_MESSAGE_TOGGLE;
+};
+
+struct Set_Polygon_Mode {
+    Polygon_Face face;
+    Polygon_Mode mode;
+
+    static const Render_Message message = RENDER_MESSAGE_SET_POLYGON_MODE;
+};
+
+struct Set_Viewport {
+    mz::s32vec2 pos;
+    mz::s32vec2 size;
+
+    static const Render_Message message = RENDER_MESSAGE_SET_VIEWPORT;
+};
+
+struct Set_Scissor_Box {
+
+    // x, y, width, height
+    mz::irect rect;
+
+    static const Render_Message message = RENDER_MESSAGE_SET_SCISSOR_BOX;
+};
+
+
+struct Set_Target {
+    // TODO: Render buffers
+    Render_Window* target;
+    static const Render_Message message = RENDER_MESSAGE_SET_TARGET;
 };
 
 NS_END(submit);

@@ -48,8 +48,22 @@ New_String get_directory(str_ptr_t path) {
 }
 
 New_String get_exe_dir() {
-    return get_directory(get_exe_path().str).str;
+    return get_directory(get_exe_path().str);
 }
+
+New_String get_workspace_dir() {
+    auto exe_dir = get_exe_dir();
+
+    size_t new_len = exe_dir.len() + strlen("/../../../..") + 1;
+
+    New_String wks_dir(new_len);
+
+    sprintf(wks_dir.str, "%s%s", exe_dir.str, "/../../../..");
+
+    return wks_dir;
+}
+
+
 
 New_String get_filename(const char* path) {
     // Find the last occurrence of / or \\ in the path

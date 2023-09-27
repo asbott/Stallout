@@ -20,6 +20,13 @@ void log_duration(const char* msg, std::chrono::steady_clock::time_point start, 
 #else
 #define MEM_TEST(...)
 #endif
+
+#ifdef _ST_RUN_TESTS
+
+#ifndef ST_ENABLE_MEMORY_TRACKING
+    #error Memory tracking needs to be enabled to run tests
+#endif
+
 void test_allocators() {
 
     IN_DEBUG_ONLY(size_t start_mem = engine::Global_Allocator::get_used_mem(););
@@ -27,7 +34,7 @@ void test_allocators() {
     // Testing single allocation and deallocation
     MEM_TEST();
     {
-        int* single = ST_NEW(int, 42);
+        int* single = ST_NEW(int) (42);
         ST_ASSERT(single != nullptr && *single == 42, "Single allocation failed");
         ST_DELETE(single);
     }
@@ -37,7 +44,7 @@ void test_allocators() {
     {
         std::vector<int*> multiples;
         for(int i = 0; i < 100; ++i) {
-            multiples.push_back(ST_NEW(int, i));
+            multiples.push_back(stnew (int) (i));
         }
         for(int i = 0; i < multiples.size(); ++i) {
             ST_ASSERT(multiples[i] != nullptr && *multiples[i] == i, "Multiple allocation failed");
@@ -60,7 +67,7 @@ void test_allocators() {
         engine::Array<std::thread> threads;
         for(int i = 0; i < 100; ++i) {
             threads.push_back(std::thread([](){
-                Complex* complex = ST_NEW(Complex, 42, "hello");
+                Complex* complex = stnew (Complex) (42, "hello");
                 ST_ASSERT(complex != nullptr && complex->x == 42 && complex->s == "hello", "Complex object allocation failed");
                 ST_DELETE(complex);
             }));
@@ -113,7 +120,7 @@ void test_allocators() {
             std::string s;
             Complex(int x, const std::string& s) : x(x), s(s) {}
         };
-        Complex* complex = ST_NEW(Complex, 42, "hello");
+        Complex* complex = stnew (Complex) (42, "hello");
         ST_ASSERT(complex != nullptr && complex->x == 42 && complex->s == "hello", "Complex object allocation failed");
         ST_DELETE(complex);
     }
@@ -129,8 +136,8 @@ void test_allocators() {
     // Testing memory overwrite
     MEM_TEST();
     {
-        int* overwrite_test = ST_NEW(int, 42);
-        int* adjacent_memory = ST_NEW(int, 43);
+        int* overwrite_test = stnew (int)(42);
+        int* adjacent_memory = stnew (int)(43);
         *adjacent_memory = 44;  // Simulating memory overwrite
         ST_ASSERT(*overwrite_test != 44, "Memory overwrite test failed");
         ST_DELETE(overwrite_test);
@@ -152,7 +159,7 @@ void test_allocators() {
         for(int i = 0; i < 100; ++i) {
             threads.push_back(std::thread([](){
                 for (int j = 0; j < 1000; ++j) {
-                    int* multi = ST_NEW(int, j);
+                    int* multi = stnew (int)(j);
                     ST_ASSERT(multi != nullptr && *multi == j, "Concurrency stress test failed");
                     ST_DELETE(multi);
                 }
@@ -294,7 +301,7 @@ void test_allocators() {
         auto start_st_new = std::chrono::steady_clock::now();
         engine::Array<int*> st_new_pointers;
         for (int i = 0; i < num; ++i) {
-            int* ptr = ST_NEW(int, i);
+            int* ptr = stnew (int)(i);
             st_new_pointers.push_back(ptr);
         }
         for (int* ptr : st_new_pointers) {
@@ -463,15 +470,15 @@ void test_io () {
     ST_ASSERT(status == IO_STATUS_OK && dir_count > 0, "Failed to count directory entries");
 
     // Test scan_directory
-    char** dir_entries = (char**)ST_MEM(dir_count * sizeof(uintptr_t));
+    char** dir_entries = (char**)ST_MEM(dir_count * sizeof(char*));
     for (size_t i = 0; i < dir_count; i++) {
-        dir_entries[i] = (char*)ST_MEM(MAX_PATH_LEN);
-        memset(dir_entries[i], 0, MAX_PATH_LEN);
+        dir_entries[i] = (char*)ST_MEM(ST_MAX_PATH);
+        memset(dir_entries[i], 0, ST_MAX_PATH);
     }
     status = os::io::scan_directory(".", dir_entries);
     for (size_t i = 0; i < dir_count; i++) {
         log_info(dir_entries[i]);
-        ST_FREE(dir_entries[i], MAX_PATH_LEN);
+        ST_FREE(dir_entries[i], ST_MAX_PATH);
     }
     ST_FREE(dir_entries, dir_count * sizeof(uintptr_t));
     ST_ASSERT(status == IO_STATUS_OK, "Failed to scan directory");
@@ -547,4 +554,5 @@ void run_tests() {
     test_allocators();
 }
 
+    #endif
 #endif

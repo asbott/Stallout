@@ -103,10 +103,10 @@ void free_audio(void* data) {
 
 
 byte_t* allocate_buffer(size_t buffer_size) {
-    return (byte_t*)Global_Allocator::allocate(buffer_size, GLOBAL_ALLOC_FLAG_LARGE & GLOBAL_ALLOC_FLAG_STATIC);
+    return (byte_t*)ST_MEMF(buffer_size, GLOBAL_ALLOC_FLAG_LARGE & GLOBAL_ALLOC_FLAG_STATIC);
 }
 void deallocate_buffer(void* buf, size_t sz) {
-    Global_Allocator::deallocate(buf, sz);
+    ST_FREE(buf, sz);
 }
 
 Double_Buffered_Thread::Double_Buffered_Thread(size_t buffer_sizes, const Double_Buffered_Thread::thread_fn_t& thread_fn)
@@ -137,6 +137,10 @@ void Double_Buffered_Thread::stop() {
 void Double_Buffered_Thread::send(void* command, const void* data, size_t data_size) {
     ST_ASSERT(_command_size, "No command type set in double buffer thread (call set_command_tpye)");
     size_t total_size = data_size + _command_size;
+    // TODO: (2023-09-25) #unfinished #stupid
+    // Just swap the buffers if write buffer is full....
+    // Need to refactor a little bit so window->swap_buffers
+    // isn't called for every command buffer (change up naming...)
     ST_ASSERT(_writebuffer_allocator._next + total_size <= _writebuffer_allocator._tail, "Command buffer overflow. Please allocate more.\nFree: {}kb/{}kb\nRequested: {}kb", (_buffer_size - (_writebuffer_allocator._tail - _writebuffer_allocator._next)) * 1000.0, _buffer_size * 1000.0, total_size * 1000.0);
     std::lock_guard lock(_buffer_mutex);
     byte_t* command_buffer = (byte_t*)_writebuffer_allocator.allocate(total_size);

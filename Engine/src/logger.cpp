@@ -4,14 +4,14 @@
 
 
 #include <spdlog/sinks/stdout_color_sinks.h>
-
 #include "spdlog/sinks/ostream_sink.h"
 #include "spdlog/sinks/dist_sink.h"
 
 #include <spdlog/fmt/ostr.h>
 
-
 #include <spdlog/sinks/base_sink.h>
+
+#include <stdarg.h>
 
 
 /*template<typename Mutex>
@@ -80,6 +80,7 @@ using imgui_sink_mt = imgui_sink<std::mutex>;
 using imgui_sink_st = imgui_sink<spdlog::details::null_mutex>;
 */
 std::shared_ptr<spdlog::logger> spdlogger;
+bool is_initialized = false;
 
 void init_logger(std::ostream& ostr) {
     
@@ -100,7 +101,12 @@ void init_logger(std::ostream& ostr) {
 
     set_logger_level(spdlog::level::trace);
 
+    is_initialized = true;
     log_info("The logger has been initialized!");
+}
+
+bool is_logger_initialized() {
+    return is_initialized;
 }
 
 std::shared_ptr<spdlog::logger> _get_spdlogger() {

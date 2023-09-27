@@ -3,6 +3,7 @@
 #include "renderer/rendercontext.h"
 #include "Engine/logger.h"
 #include "Engine/stringutils.h"
+#include "Engine/maths.h"
 
 
 #include <glad/glad.h>
@@ -58,10 +59,10 @@ void GLAPIENTRY gl_debug_callback(
             log_it(trace, "Notification");
             break;
         case GL_DEBUG_SEVERITY_LOW:
-            log_it(warn, "Low");
+            log_it(debug, "Low");
             break;
         case GL_DEBUG_SEVERITY_MEDIUM:
-            log_it(error, "Medium");
+            log_it(warn, "Medium");
             break;
         case GL_DEBUG_SEVERITY_HIGH:
             if (source != GL_DEBUG_SOURCE_SHADER_COMPILER) {
@@ -356,7 +357,285 @@ GL_ID decide_mipmap_filter(Texture_Filter_Mode min_filter, Mipmap_Mode mipmap_fi
     return 0; 
 }
 
+GL_ID to_gl_enum(Blend_Equation e) {
+    switch(e) {
+        case BLEND_EQUATION_ADD:
+            return GL_FUNC_ADD;
+        case BLEND_EQUATION_SUBTRACT:
+            return GL_FUNC_SUBTRACT;
+        case BLEND_EQUATION_REVERSE_SUBTRACT:
+            return GL_FUNC_REVERSE_SUBTRACT;
+        case BLEND_EQUATION_MAX:
+            return GL_MAX;
+        case BLEND_EQUATION_MIN:
+            return GL_MIN;
+        default:
+            INTENTIONAL_CRASH("Unhandled enum");
+            return 0;
+    }
+}
+
+GL_ID to_gl_enum(Blend_Func_Factor e) {
+    switch(e) {
+        case BLEND_FACTOR_ZERO:
+            return GL_ZERO;
+        case BLEND_FACTOR_ONE:
+            return GL_ONE;
+        case BLEND_FACTOR_SRC_COLOR:
+            return GL_SRC_COLOR;
+        case BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+            return GL_ONE_MINUS_SRC_COLOR;
+        case BLEND_FACTOR_DST_COLOR:
+            return GL_DST_COLOR;
+        case BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+            return GL_ONE_MINUS_DST_COLOR;
+        case BLEND_FACTOR_SRC_ALPHA:
+            return GL_SRC_ALPHA;
+        case BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+            return GL_ONE_MINUS_SRC_ALPHA;
+        case BLEND_FACTOR_DST_ALPHA:
+            return GL_DST_ALPHA;
+        case BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+            return GL_ONE_MINUS_DST_ALPHA;
+        case BLEND_FACTOR_CONSTANT_COLOR:
+            return GL_CONSTANT_COLOR;
+        case BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+            return GL_ONE_MINUS_CONSTANT_COLOR;
+        case BLEND_FACTOR_CONSTANT_ALPHA:
+            return GL_CONSTANT_ALPHA;
+        case BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+            return GL_ONE_MINUS_CONSTANT_ALPHA;
+        case BLEND_FACTOR_SRC_ALPHA_SATURATE:
+            return GL_SRC_ALPHA_SATURATE;
+        case BLEND_FACTOR_SRC1_COLOR:
+            return GL_SRC1_COLOR;
+        case BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
+            return GL_ONE_MINUS_SRC1_COLOR;
+        case BLEND_FACTOR_SRC1_ALPHA:
+            return GL_SRC1_ALPHA;
+        case BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA: 
+            return GL_ONE_MINUS_SRC1_ALPHA;
+        default:
+            INTENTIONAL_CRASH("Unhandled enum");
+            return 0;
+    }
+}
+GLenum to_gl_enum(Renderer_Setting_Flags flag) {
+    switch (flag) {
+        case RENDERER_SETTING_CULLING: return GL_CULL_FACE;
+        case RENDERER_SETTING_DEPTH_TESTING: return GL_DEPTH_TEST;
+        case RENDERER_SETTING_STENCIL_TESTING: return GL_STENCIL_TEST;
+        case RENDERER_SETTING_PRIMITIVE_RESTART: return GL_PRIMITIVE_RESTART;
+        case RENDERER_SETTING_SCISSOR_TESTING: return GL_SCISSOR_TEST;
+        default: INTENTIONAL_CRASH("Uhandled enum"); return 0;
+    }
+}
+GLenum to_gl_enum(Polygon_Face e) {
+    switch (e) {
+        case POLY_FACE_FRONT: return GL_FRONT;
+        case POLY_FACE_BACK: return GL_BACK;
+        case POLY_FACE_FRONT_AND_BACK: return GL_FRONT_AND_BACK;
+        default: INTENTIONAL_CRASH("Uhandled enum"); return 0;
+    }
+}
+GLenum to_gl_enum(Polygon_Mode e) {
+    switch (e) {
+        case POLY_MODE_FILL: return GL_FILL;
+        case POLY_MODE_LINE: return GL_LINE;
+        case POLY_MODE_POINT: return GL_POINT;
+        default: INTENTIONAL_CRASH("Uhandled enum"); return 0;
+    }
+}
+
+
+Buffer_Type to_st_enum_buffer_type(GL_ID gl_type) {
+    switch (gl_type) {
+        case GL_ARRAY_BUFFER: return BUFFER_TYPE_ARRAY_BUFFER;
+        case GL_ATOMIC_COUNTER_BUFFER: return BUFFER_TYPE_ATOMIC_COUNTER_BUFFER;
+        case GL_COPY_READ_BUFFER: return BUFFER_TYPE_COPY_READ_BUFFER;
+        case GL_COPY_WRITE_BUFFER: return BUFFER_TYPE_COPY_WRITE_BUFFER;
+        case GL_DISPATCH_INDIRECT_BUFFER: return BUFFER_TYPE_DISPATCH_INDIRECT_BUFFER;
+        case GL_DRAW_INDIRECT_BUFFER: return BUFFER_TYPE_DRAW_INDIRECT_BUFFER;
+        case GL_ELEMENT_ARRAY_BUFFER: return BUFFER_TYPE_ELEMENT_ARRAY_BUFFER;
+        case GL_PIXEL_PACK_BUFFER: return BUFFER_TYPE_PIXEL_PACK_BUFFER;
+        case GL_PIXEL_UNPACK_BUFFER: return BUFFER_TYPE_PIXEL_UNPACK_BUFFER;
+        case GL_QUERY_BUFFER: return BUFFER_TYPE_QUERY_BUFFER;
+        case GL_SHADER_STORAGE_BUFFER: return BUFFER_TYPE_SHADER_STORAGE_BUFFER;
+        case GL_TEXTURE_BUFFER: return BUFFER_TYPE_TEXTURE_BUFFER;
+        case GL_TRANSFORM_FEEDBACK_BUFFER: return BUFFER_TYPE_TRANSFORM_FEEDBACK_BUFFER;
+        case GL_UNIFORM_BUFFER: return BUFFER_TYPE_UNIFORM_BUFFER;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Buffer_Type"); return BUFFER_TYPE_ARRAY_BUFFER;
+    }
+}
+
+Buffer_Usage to_st_buffer_usage(GL_ID gl_usage) {
+    switch (gl_usage) {
+        case GL_STREAM_DRAW: return BUFFER_USAGE_STREAM_DRAW;
+        case GL_STREAM_READ: return BUFFER_USAGE_STREAM_READ;
+        case GL_STREAM_COPY: return BUFFER_USAGE_STREAM_COPY;
+        case GL_STATIC_DRAW: return BUFFER_USAGE_STATIC_DRAW;
+        case GL_STATIC_READ: return BUFFER_USAGE_STATIC_READ;
+        case GL_STATIC_COPY: return BUFFER_USAGE_STATIC_COPY;
+        case GL_DYNAMIC_DRAW: return BUFFER_USAGE_DYNAMIC_DRAW;
+        case GL_DYNAMIC_READ: return BUFFER_USAGE_DYNAMIC_READ;
+        case GL_DYNAMIC_COPY: return BUFFER_USAGE_DYNAMIC_COPY;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Buffer_Usage"); return BUFFER_USAGE_DYNAMIC_COPY;
+    }
+}
+
+Data_Type to_st_data_type(GL_ID gl_type) {
+    switch (gl_type) {
+        case GL_BYTE: return DATA_TYPE_BYTE;
+        case GL_UNSIGNED_BYTE: return DATA_TYPE_UBYTE;
+        case GL_SHORT: return DATA_TYPE_SHORT;
+        case GL_UNSIGNED_SHORT: return DATA_TYPE_USHORT;
+        case GL_INT: return DATA_TYPE_INT;
+        case GL_UNSIGNED_INT: return DATA_TYPE_UINT;
+        case GL_HALF_FLOAT: return DATA_TYPE_HALF;
+        case GL_FLOAT: return DATA_TYPE_FLOAT;
+        case GL_DOUBLE: return DATA_TYPE_DOUBLE;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Data_Type"); return DATA_TYPE_UINT;
+    }
+}
+
+Texture2D_Format to_st_texture2d_format(GL_ID gl_format) {
+    switch (gl_format) {
+        case GL_RED: return TEXTURE2D_FORMAT_RED;
+        case GL_RG: return TEXTURE2D_FORMAT_RG;
+        case GL_RGB: return TEXTURE2D_FORMAT_RGB;
+        case GL_BGR: return TEXTURE2D_FORMAT_BGR;
+        case GL_RGBA: return TEXTURE2D_FORMAT_RGBA;
+        case GL_BGRA: return TEXTURE2D_FORMAT_BGRA;
+        case GL_RED_INTEGER: return TEXTURE2D_FORMAT_RED_INTEGER;
+        case GL_RG_INTEGER: return TEXTURE2D_FORMAT_RG_INTEGER;
+        case GL_RGB_INTEGER: return TEXTURE2D_FORMAT_RGB_INTEGER;
+        case GL_BGR_INTEGER: return TEXTURE2D_FORMAT_BGR_INTEGER;
+        case GL_RGBA_INTEGER: return TEXTURE2D_FORMAT_RGBA_INTEGER;
+        case GL_BGRA_INTEGER: return TEXTURE2D_FORMAT_BGRA_INTEGER;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Texture2D_Format"); return TEXTURE2D_FORMAT_BGR;
+    }
+}
+
+Buffer_Access_Mode to_st_buffer_access_mode(GL_ID gl_mode) {
+    switch (gl_mode) {
+        case GL_READ_ONLY: return BUFFER_ACCESS_MODE_READONLY;
+        case GL_WRITE_ONLY: return BUFFER_ACCESS_MODE_WRITEONLY;
+        case GL_READ_WRITE: return BUFFER_ACCESS_MODE_READWRITE;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Buffer_Access_Mode"); return BUFFER_ACCESS_MODE_READWRITE;
+    }
+}
+
+Draw_Mode to_st_draw_mode(GL_ID gl_mode) {
+    switch (gl_mode) {
+        case GL_POINTS: return DRAW_MODE_POINTS;
+        case GL_LINE_STRIP: return DRAW_MODE_LINE_STRIP;
+        case GL_LINE_LOOP: return DRAW_MODE_LINE_LOOP;
+        case GL_LINES: return DRAW_MODE_LINES;
+        case GL_LINE_STRIP_ADJACENCY: return DRAW_MODE_LINE_STRIP_ADJACENCY;
+        case GL_LINES_ADJACENCY: return DRAW_MODE_LINES_ADJACENCY;
+        case GL_TRIANGLE_STRIP: return DRAW_MODE_TRIANGLE_STRIP;
+        case GL_TRIANGLE_FAN: return DRAW_MODE_TRIANGLE_FAN;
+        case GL_TRIANGLES: return DRAW_MODE_TRIANGLES;
+        case GL_TRIANGLE_STRIP_ADJACENCY: return DRAW_MODE_TRIANGLE_STRIP_ADJACENCY;
+        case GL_TRIANGLES_ADJACENCY: return DRAW_MODE_TRIANGLES_ADJACENCY;
+        case GL_PATCHES: return DRAW_MODE_PATCHES;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Draw_Mode"); return DRAW_MODE_POINTS;
+    }
+}
+
+Texture_Wrap_Mode to_st_texture_wrap_mode(GL_ID gl_mode) {
+    switch (gl_mode) {
+        case GL_CLAMP_TO_EDGE: return TEXTURE_WRAP_MODE_CLAMP_TO_EDGE;
+        case GL_CLAMP_TO_BORDER: return TEXTURE_WRAP_MODE_CLAMP_TO_BORDER;
+        case GL_MIRRORED_REPEAT: return TEXTURE_WRAP_MODE_MIRRORED_REPEAT;
+        case GL_REPEAT: return TEXTURE_WRAP_MODE_REPEAT;
+        case GL_MIRROR_CLAMP_TO_EDGE: return TEXTURE_WRAP_MODE_MIRROR_CLAMP_TO_EDGE;
+        default: INTENTIONAL_CRASH("Invalid GL constant for Texture_Wrap_Mode"); return TEXTURE_WRAP_MODE_REPEAT;
+    }
+}
+
+Blend_Equation to_st_blend_equation(GL_ID value) {
+    switch(value) {
+        case GL_FUNC_ADD:
+            return BLEND_EQUATION_ADD;
+        case GL_FUNC_SUBTRACT:
+            return BLEND_EQUATION_SUBTRACT;
+        case GL_FUNC_REVERSE_SUBTRACT:
+            return BLEND_EQUATION_REVERSE_SUBTRACT;
+        case GL_MAX:
+            return BLEND_EQUATION_MAX;
+        case GL_MIN:
+            return BLEND_EQUATION_MIN;
+        default:
+            INTENTIONAL_CRASH("Unhandled OpenGL constant");
+            return BLEND_EQUATION_MIN;
+    }
+}
+
+Blend_Func_Factor to_st_blend_factor(GL_ID value) {
+    switch(value) {
+        case GL_ZERO: return BLEND_FACTOR_ZERO;
+        case GL_ONE: return BLEND_FACTOR_ONE;
+        case GL_SRC_COLOR: return BLEND_FACTOR_SRC_COLOR;
+        case GL_ONE_MINUS_SRC_COLOR: return BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+        case GL_DST_COLOR: return BLEND_FACTOR_DST_COLOR;
+        case GL_ONE_MINUS_DST_COLOR: return BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+        case GL_SRC_ALPHA: return BLEND_FACTOR_SRC_ALPHA;
+        case GL_ONE_MINUS_SRC_ALPHA: return BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        case GL_DST_ALPHA: return BLEND_FACTOR_DST_ALPHA;
+        case GL_ONE_MINUS_DST_ALPHA: return BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+        case GL_CONSTANT_COLOR: return BLEND_FACTOR_CONSTANT_COLOR;
+        case GL_ONE_MINUS_CONSTANT_COLOR: return BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+        case GL_CONSTANT_ALPHA: return BLEND_FACTOR_CONSTANT_ALPHA;
+        case GL_ONE_MINUS_CONSTANT_ALPHA: return BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+        case GL_SRC_ALPHA_SATURATE: return BLEND_FACTOR_SRC_ALPHA_SATURATE;
+        case GL_SRC1_COLOR: return BLEND_FACTOR_SRC1_COLOR;
+        case GL_ONE_MINUS_SRC1_COLOR: return BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+        case GL_SRC1_ALPHA: return BLEND_FACTOR_SRC1_ALPHA;
+        case GL_ONE_MINUS_SRC1_ALPHA: return BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+        default:
+            INTENTIONAL_CRASH("Unhandled OpenGL constant");
+            return BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+    }
+}
+
+Renderer_Setting_Flags to_st_renderer_settings(GLenum value) {
+    Renderer_Setting_Flags f = (Renderer_Setting_Flags)0;
+    if (value & GL_CULL_FACE) f |= RENDERER_SETTING_CULLING;
+    if (value & GL_DEPTH_TEST) f |= RENDERER_SETTING_DEPTH_TESTING;
+    if (value & GL_STENCIL_TEST) f |= RENDERER_SETTING_STENCIL_TESTING;
+    if (value & GL_PRIMITIVE_RESTART) f |= RENDERER_SETTING_PRIMITIVE_RESTART;
+    if (value & GL_SCISSOR_TEST) f |= RENDERER_SETTING_SCISSOR_TESTING;
+
+    return f;
+}
+
+Polygon_Mode to_st_poly_mode(GLenum value) {
+    switch(value) {
+        case GL_FILL: return POLY_MODE_FILL;
+        case GL_LINE: return POLY_MODE_LINE;
+        case GL_POINT: return POLY_MODE_POINT;
+        default:
+            INTENTIONAL_CRASH("Unhandled OpenGL constant");
+            return POLY_MODE_POINT;
+    }
+}
+
+Polygon_Face to_st_poly_face(GLenum value) {
+    switch(value) {
+        case GL_FRONT: return POLY_FACE_FRONT;
+        case GL_BACK: return POLY_FACE_BACK;
+        case GL_FRONT_AND_BACK: return POLY_FACE_FRONT_AND_BACK;
+        default:
+            INTENTIONAL_CRASH("Unhandled OpenGL constant");
+            return POLY_FACE_FRONT;
+    }
+}
+
+
+
 bool glad_initialized = false;
+std::mutex glad_init_mutex;
 
 struct Buffer_State {
     Buffer_Type buffer_type;
@@ -385,11 +664,15 @@ struct Shader_State {
 struct Layout_State {
     Array<Buffer_Layout_Entry> entries;
     size_t total_size;
-    GL_ID last_draw_glvbo;
 };
 
+
+// !WARNING
+// Only store state that can be shared between
+// contexts I.E. resources & data but not bindings
 struct GL_State {
     std::mutex resource_meta_map_mutex;
+    Hash_Map<Resource_ID, Resource_Handle> handle_map;
     Hash_Map<Resource_ID, Resource_Meta_Info> resource_meta_map; // Stored per ID
 
     Hash_Map<Resource_ID, Buffer_State> buffers;
@@ -397,11 +680,6 @@ struct GL_State {
     Hash_Map<Resource_ID, Shader_State> shaders;
     Hash_Map<Resource_ID, Layout_State> layouts;
 
-    mz::color current_clear_color;
-
-    GLuint last_active_texture_slot = 0;
-    GL_ID last_bound_gltexture = 0;
-    GL_ID last_bound_shader = 0;
 };
 
 void check_resource_handle(GL_State& state, Resource_Handle hnd) {
@@ -611,9 +889,6 @@ void handle_creation(GL_State& state, Render_Command* header, void* data) {
                 total_size += data_type_to_size(spec.pentries[i].data_type) * spec.pentries[i].ncomponents;
             }
 
-            GLuint vao;
-            glGenVertexArrays(1, &vao);
-
             Layout_State layout_state;
             
             for (GLsizei i = 0; i < spec.num_entries; i++) {
@@ -625,7 +900,7 @@ void handle_creation(GL_State& state, Render_Command* header, void* data) {
 
             ST_FREE(spec.pentries, spec.num_entries * sizeof(Buffer_Layout_Entry));
 
-            rid = to_resource_id(vao, header->resource_type);
+            rid = math::rand64();//to_resource_id(vao, header->resource_type);
             state.layouts[rid] = layout_state;
             rinfo.state = RESOURCE_STATE_READY;
 
@@ -670,6 +945,7 @@ void handle_creation(GL_State& state, Render_Command* header, void* data) {
     *header->handle = rid;
     std::lock_guard rlock(state.resource_meta_map_mutex);
     state.resource_meta_map[rid] = rinfo;
+    state.handle_map[rid] = header->handle;
 }
 
 void handle_set(GL_State& state, Render_Command* header, void* data) {
@@ -699,9 +975,11 @@ void handle_set(GL_State& state, Render_Command* header, void* data) {
         GL_ID buffer_type = to_gl_enum(buffer_data.buffer_type);
 
         if (data && data_size) {
+            GLint last_bound;
+            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_bound);
             glBindBuffer(buffer_type, buffer);
             glBufferData(buffer_type, data_size, data, to_gl_enum(buffer_data.buffer_usage));
-            glBindBuffer(buffer_type, 0);
+            glBindBuffer(buffer_type, last_bound);
         }
 
         break;
@@ -712,6 +990,12 @@ void handle_set(GL_State& state, Render_Command* header, void* data) {
         GL_ID texture = to_gl_id(rid, RESOURCE_TYPE_TEXTURE2D);
         auto& tex_data = state.texture2ds[rid];
         
+        GLint last_slot;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &last_slot);
+
+        GLint last_bound;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_bound);
+
         glBindTexture(GL_TEXTURE_2D, texture);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, to_gl_enum(tex_data.wrap_mode));	
@@ -724,9 +1008,9 @@ void handle_set(GL_State& state, Render_Command* header, void* data) {
             glGenerateMipmap(GL_TEXTURE_2D);
         }
 
-        if (state.last_active_texture_slot) {
-            glActiveTexture(state.last_active_texture_slot);
-            glBindTexture(GL_TEXTURE_2D, state.last_bound_gltexture);
+        if (last_bound) {
+            glActiveTexture(last_slot);
+            glBindTexture(GL_TEXTURE_2D, last_bound);
         }
 
         break;
@@ -755,6 +1039,7 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
     {
     case RENDER_MESSAGE_CLEAR:
     {
+
         const auto& spec = *(spec::submit::Clear*)data;
         int gl_clear_flags = 0;
 
@@ -762,20 +1047,14 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         if (spec.clear_flags & CLEAR_FLAG_STENCIL) gl_clear_flags |= GL_STENCIL_BUFFER_BIT;
         if (spec.clear_flags & CLEAR_FLAG_DEPTH) gl_clear_flags |= GL_DEPTH_BUFFER_BIT;
         
-        
         glClear(gl_clear_flags);
-
 
         break;
     }
     case RENDER_MESSAGE_SET_CLEAR_COLOR:
     {
         const auto& spec = *(spec::submit::Set_Clear_Color*)data;
-        
-        if (spec.clear_color != state.current_clear_color) {
-            glClearColor(spec.clear_color.r, spec.clear_color.g, spec.clear_color.b, spec.clear_color.a);
-            state.current_clear_color = spec.clear_color;
-        }
+        glClearColor(spec.clear_color.r, spec.clear_color.g, spec.clear_color.b, spec.clear_color.a);
         break;
     }
     case RENDER_MESSAGE_BIND_SHADER_UNIFORM_BUFFER:
@@ -810,18 +1089,19 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
     case RENDER_MESSAGE_BIND_TEXTURE2D:
     {
         const auto& spec = *(spec::submit::Bind_Texture2D*)data;
-        check_resource_handle_is(state, spec.hnd_texture, RESOURCE_TYPE_TEXTURE2D);
 
-        Resource_ID texture_id = *spec.hnd_texture;
+        if (spec.hnd_texture) {
+            check_resource_handle_is(state, spec.hnd_texture, RESOURCE_TYPE_TEXTURE2D);
 
-        GL_ID gltexture = to_gl_id(texture_id, RESOURCE_TYPE_TEXTURE2D);
+            Resource_ID rid = *spec.hnd_texture;
 
-        glActiveTexture(GL_TEXTURE0 + (GLenum)spec.slot);
-        glBindTexture(GL_TEXTURE_2D, gltexture);
+            GL_ID gltexture = to_gl_id(rid, RESOURCE_TYPE_TEXTURE2D);
 
-        state.last_active_texture_slot = GL_TEXTURE0 + (GLuint)spec.slot;
-        state.last_bound_gltexture = gltexture;
+            glActiveTexture(GL_TEXTURE0 + (GLenum)spec.slot);
+            glBindTexture(GL_TEXTURE_2D, gltexture);
+        }
 
+        
         break;
     }
     case RENDER_MESSAGE_DRAW_INDEXED:
@@ -831,6 +1111,8 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         check_resource_handle_is(state, spec.ibo, RESOURCE_TYPE_BUFFER);
         check_resource_handle_is(state, spec.layout, RESOURCE_TYPE_BUFFER_LAYOUT);
         check_resource_handle_is(state, spec.shader, RESOURCE_TYPE_SHADER);
+
+        
 
         Resource_ID vbo = *spec.vbo;
         Resource_ID ibo = *spec.ibo;
@@ -844,42 +1126,45 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         ST_ASSERT(vbo_state.buffer_type == BUFFER_TYPE_ARRAY_BUFFER, "Expected array buffer");
         ST_ASSERT(ibo_state.buffer_type == BUFFER_TYPE_ELEMENT_ARRAY_BUFFER, "Expected element buffer");
 
-
         ST_ASSERT(spec.index_data_type == DATA_TYPE_UBYTE || spec.index_data_type == DATA_TYPE_USHORT || spec.index_data_type == DATA_TYPE_UINT, "Invalid data type for indices");
 
         GL_ID glvbo = to_gl_id(vbo, RESOURCE_TYPE_BUFFER);
         GL_ID glibo = to_gl_id(ibo, RESOURCE_TYPE_BUFFER);
-        GL_ID gllayout = to_gl_id(layout, RESOURCE_TYPE_BUFFER_LAYOUT);
         GL_ID glshader = to_gl_id(shader, RESOURCE_TYPE_SHADER);
 
-        if (glshader != state.last_bound_shader) {
-            glUseProgram(glshader);
-        }
+        glUseProgram(glshader);
 
-        glBindVertexArray(gllayout);
+        // TODO: (2023-09-26) #performance #renderer #contextsharing
+        // Since VAO's for some reason are not shared in GL contexts
+        // we either need to create them like this every time we need
+        // them or the better way which is probably to store one VAO
+        // per context and just update the layout on each use OR maybe
+        // even manage several vaos per state but I'm not sure just
+        // updating the layout is going to make a noticable difference
+        // performance-wise
+        GLuint vao;
+        glGenVertexArrays(1, &vao);
+
+        glBindVertexArray(vao);
         glBindBuffer(to_gl_enum(vbo_state.buffer_type), glvbo);
         glBindBuffer(to_gl_enum(ibo_state.buffer_type), glibo);
 
-        // Set vao layout if needed
-        if (layout_state.last_draw_glvbo != glvbo) {
-            layout_state.last_draw_glvbo = glvbo;
+        size_t offset = 0;
+        const size_t sz = layout_state.entries.size();
+        for (size_t i = 0; i < sz; i++) {
+            const auto& entry = layout_state.entries[i];
 
-            size_t offset = 0;
-            const size_t sz = layout_state.entries.size();
-            for (size_t i = 0; i < sz; i++) {
-                const auto& entry = layout_state.entries[i];
+            size_t type_size = data_type_to_size(entry.data_type);
 
-                size_t type_size = data_type_to_size(entry.data_type);
+            glVertexAttribPointer((GLuint)i, (GLint)entry.ncomponents, to_gl_enum(entry.data_type), entry.normalized, (GLsizei)layout_state.total_size, (const void*)offset);
+            glEnableVertexAttribArray((GLuint)i);
 
-                glVertexAttribPointer((GLuint)i, (GLint)entry.ncomponents, to_gl_enum(entry.data_type), entry.normalized, (GLsizei)layout_state.total_size, (const void*)offset);
-                glEnableVertexAttribArray((GLuint)i);
-
-                offset += type_size * entry.ncomponents;
-            }
-
+            offset += type_size * entry.ncomponents;
         }
 
-        glDrawElements(to_gl_enum(spec.draw_mode), (GLsizei)(ibo_state.size / data_type_to_size(spec.index_data_type)), to_gl_enum(spec.index_data_type), 0);
+        glDrawElements(to_gl_enum(spec.draw_mode), (GLsizei)spec.index_count, to_gl_enum(spec.index_data_type), (const void*)(spec.indices_offset * data_type_to_size(spec.index_data_type)));
+
+        glDeleteVertexArrays(1, &vao);
 
         break;
     }
@@ -931,6 +1216,53 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         }
 
         
+        break;
+    }
+    case RENDER_MESSAGE_SET_BLENDING: 
+    {
+        const auto& spec = *(spec::submit::Set_Blending*)data;
+        glEnable(GL_BLEND);
+        glBlendEquation(to_gl_enum(spec.equation));
+        glBlendFuncSeparate(
+            to_gl_enum(spec.src_color_factor), 
+            to_gl_enum(spec.dst_color_factor), 
+            to_gl_enum(spec.src_alpha_factor), 
+            to_gl_enum(spec.dst_alpha_factor)
+        );
+
+        break;
+    }
+    case RENDER_MESSAGE_SET_POLYGON_MODE:
+    {
+        const auto& spec = *(spec::submit::Set_Polygon_Mode*)data;
+
+        glPolygonMode(to_gl_enum(spec.face), to_gl_enum(spec.mode));
+
+        break;
+    }
+    case RENDER_MESSAGE_TOGGLE:
+    {
+        const auto& spec = *(spec::submit::Toggle*)data;
+
+        for (u32 i = 1; i < RENDERER_SETTING_MAX; i <<= 1) {
+            if (spec.settings & (Renderer_Setting_Flags)i) {
+                if (spec.enabled) glEnable (to_gl_enum((Renderer_Setting_Flags)i));
+                else              glDisable(to_gl_enum((Renderer_Setting_Flags)i)); 
+            }    
+        }
+
+        break;
+    }
+    case RENDER_MESSAGE_SET_VIEWPORT:
+    {
+        const auto& spec = *(spec::submit::Set_Viewport*)data;
+        glViewport(spec.pos.x, spec.pos.y, spec.size.width, spec.size.height);
+        break;
+    }
+    case RENDER_MESSAGE_SET_SCISSOR_BOX:
+    {
+        const auto& spec = *(spec::submit::Set_Scissor_Box*)data;
+        glScissor(spec.rect.pos.x, spec.rect.pos.y, spec.rect.size.x, spec.rect.size.y);
         break;
     }
     case __INTERNAL_RENDER_MESSAGE_MAP_BUFFER:
@@ -990,6 +1322,134 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
 
 
 
+bool Render_Context::query(Query_Type type, _Query_Result* result) {
+    if (!result) return false; 
+
+    memset(result->ptr, 0, sizeof(result->ptr));
+
+    bool ret = true;
+    
+    _current_target->_os_context->use([&]() {
+        switch (type) {
+            case QUERY_TYPE_RENDERER_SETTINGS_FLAGS:
+            {
+                s32 flags = RENDERER_SETTING_UNSET;
+                
+                GLint value;
+                glGetIntegerv(GL_CULL_FACE, &value);
+                if (value) flags |= RENDERER_SETTING_CULLING;
+
+                glGetIntegerv(GL_DEPTH_TEST, &value);
+                if (value) flags |= RENDERER_SETTING_DEPTH_TESTING;
+
+                glGetIntegerv(GL_STENCIL_TEST, &value);
+                if (value) flags |= RENDERER_SETTING_STENCIL_TESTING;
+
+                glGetIntegerv(GL_PRIMITIVE_RESTART, &value);
+                if (value) flags |= RENDERER_SETTING_PRIMITIVE_RESTART;
+
+                glGetIntegerv(GL_SCISSOR_TEST, &value);
+                if (value) flags |= RENDERER_SETTING_SCISSOR_TESTING;
+
+                memcpy(result->ptr, &flags, sizeof(flags));
+                break;
+            }
+
+            case QUERY_TYPE_BLENDING_EQUATION:
+            {
+                GLint value;
+                glGetIntegerv(GL_BLEND_EQUATION_RGB, &value);
+                auto e = to_st_blend_equation(value);
+                memcpy(result->ptr, &e, sizeof(e));
+            }
+            case QUERY_TYPE_BLENDING_SRC_COLOR:
+            case QUERY_TYPE_BLENDING_DST_COLOR:
+            case QUERY_TYPE_BLENDING_SRC_ALPHA:
+            case QUERY_TYPE_BLENDING_DST_ALPHA:
+            {
+                GLint value = 0;
+                if (type == QUERY_TYPE_BLENDING_SRC_COLOR) {
+                    glGetIntegerv(GL_BLEND_SRC_RGB, &value);
+                } else if (type == QUERY_TYPE_BLENDING_DST_COLOR) {
+                    glGetIntegerv(GL_BLEND_DST_RGB, &value);
+                } else if (type == QUERY_TYPE_BLENDING_SRC_ALPHA) {
+                    glGetIntegerv(GL_BLEND_SRC_ALPHA, &value);
+                } else if (type == QUERY_TYPE_BLENDING_DST_ALPHA) {
+                    glGetIntegerv(GL_BLEND_DST_ALPHA, &value);
+                }
+                auto e = to_st_blend_factor(value);
+                memcpy(result->ptr, &e, sizeof(e));
+                break;
+            }
+
+            case QUERY_TYPE_POLY_FACE:
+            {
+                GLint face;
+                glGetIntegerv(GL_FRONT_FACE, &face);
+                auto e = to_st_poly_face(face);
+                memcpy(result->ptr, &e, sizeof(e));
+                break;
+            }
+
+            case QUERY_TYPE_POLY_MODE_FRONT:
+            {
+                GLint mode[2];
+                glGetIntegerv(GL_POLYGON_MODE, mode);
+
+                auto e = to_st_poly_mode(mode[0]);
+                memcpy(result->ptr, &e, sizeof(e));
+                break;
+            }
+            case QUERY_TYPE_POLY_MODE_BACK:
+            {
+                GLint mode[2];
+                glGetIntegerv(GL_POLYGON_MODE, mode);
+
+                auto e = to_st_poly_mode(mode[1]);
+                memcpy(result->ptr, &e, sizeof(e));
+                break;
+            }
+
+            case QUERY_TYPE_VIEWPORT:
+            {
+                GLint viewport[4];
+                glGetIntegerv(GL_VIEWPORT, viewport);
+                memcpy(result->ptr, viewport, sizeof(viewport));
+                break;
+            }
+
+            default:
+            {
+                if (type > QUERY_TYPE_TEXTURE_SLOT && type < QUERY_TYPE_NEXT) {
+                    GLint bound_texture;
+                    glGetIntegerv(GL_ACTIVE_TEXTURE, &bound_texture); 
+
+                    glActiveTexture(GL_TEXTURE0 + (type - QUERY_TYPE_TEXTURE_SLOT));
+
+                    GLint boundTexture;
+                    glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
+
+                    glActiveTexture(bound_texture);
+
+                    Resource_ID rid = to_resource_id(bound_texture, RESOURCE_TYPE_TEXTURE2D);
+
+                    GL_State& state = *((GL_State*)__internal);
+
+                    if (!state.handle_map.contains(rid)) ret = false;
+
+                    auto texture_handle  = state.handle_map[rid];
+
+                    memcpy(result->ptr, &texture_handle, sizeof(texture_handle));
+                    break;
+                } else {
+                    ret = false; 
+                }
+            }
+        }
+    });
+    return ret;
+}
+
 const Resource_Meta_Info& Render_Context::get_resource_meta(Resource_Handle hnd) const {
     ST_ASSERT(__internal, "Renderer not ready");
     ST_DEBUG_ASSERT(hnd);
@@ -1011,8 +1471,12 @@ Resource_State Render_Context::get_resource_state(Resource_Handle hnd) const {
 
 
     auto&  gl_state = *(GL_State*)__internal;
-    
-    if (gl_state.resource_meta_map.contains(*hnd)) {
+    bool contains = false;
+    {
+        std::lock_guard lock(gl_state.resource_meta_map_mutex);
+        contains = gl_state.resource_meta_map.contains(*hnd);
+    }
+    if (contains) {
         return get_resource_meta(hnd).state;
     }
 
@@ -1020,27 +1484,25 @@ Resource_State Render_Context::get_resource_state(Resource_Handle hnd) const {
 }
 
 void Render_Context::__internal_init() {
-    _os_context->make_current();
-    if (!glad_initialized) {
-        ST_ASSERT(gladLoadGL(), "Failed loading GLAD");
-        glad_initialized = true;
+    
+    
+    {
+        std::lock_guard gladlock(glad_init_mutex);
+        if (!glad_initialized) {
+            ST_ASSERT(gladLoadGL(), "Failed loading GLAD");
+            glad_initialized = true;
 
-        log_info("Initialized GLAD");
+            log_info("Initialized GLAD");
 
-        #ifdef _ST_CONFIG_DEBUG
-        glEnable              ( GL_DEBUG_OUTPUT );
-        glDebugMessageCallback( gl_debug_callback, 0 );
-        log_info("Set up OpenGL Debug callback");
-        #endif
+            #ifdef _ST_CONFIG_DEBUG
+            glEnable              ( GL_DEBUG_OUTPUT );
+            glDebugMessageCallback( gl_debug_callback, 0 );
+            log_info("Set up OpenGL Debug callback");
+            #endif
+        }
     }
     
     __internal = ST_NEW(GL_State);
-
-    // TODO:
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    
 
     std::lock_guard lock(_env_mutex);
 
@@ -1060,7 +1522,28 @@ void Render_Context::__internal_init() {
     _env.driver = (const char*)glGetString(GL_VERSION);
     _env.shading_version = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
 }
-void Render_Context::__internal_render() {
+
+void Render_Context::__internal_handle_command(Render_Command* header, void* data) {
+    auto& state = *(GL_State*)__internal;
+    
+    switch (header->type)
+    {
+        case RENDER_COMMAND_TYPE_CREATE:
+            handle_creation(state, header, data);
+            break;
+        case RENDER_COMMAND_TYPE_SUBMIT:
+            handle_message(state, header ,data);
+            break;
+        case RENDER_COMMAND_TYPE_SET:
+            handle_set(state, header ,data);
+            break;
+        default:
+            ST_ASSERT(false);
+            break;
+    }
+}
+
+/*void Render_Context::__internal_render() {
     auto& state = *(GL_State*)__internal;
 
     _render_thread.traverse_commands<Render_Command>([&](Render_Command* header, void* data) {
@@ -1084,7 +1567,7 @@ void Render_Context::__internal_render() {
     });
 
     
-}
+}*/
 void Render_Context::__internal_shutdown() {
     ST_DELETE((GL_State*)__internal);
 

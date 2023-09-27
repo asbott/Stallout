@@ -16,11 +16,13 @@ struct New_String {
 
 	bool __owner = true;
 
-	inline New_String(size_t buffer_size) {
+	explicit inline New_String(size_t len) {
+		size_t buffer_size = len + 1;
 		str = static_cast<char*>(ST_MEM(buffer_size));
 		_buffer_size = buffer_size;
+		memset(str, 0, _buffer_size);
 	}
-	inline New_String(const char* src) {
+	explicit inline New_String(const char* src) {
 		const size_t size = strlen(src) + 1;
 		_buffer_size = size;
 		str = static_cast<char*>(ST_MEM(size));
@@ -38,6 +40,49 @@ struct New_String {
 			strcpy(str, src);
 		}
 	}
+	New_String& operator=(const New_String& other) {
+		if (this != &other) {
+			if (__owner && str) {
+				ST_FREE(str, _buffer_size);
+			}
+
+			
+			_buffer_size = other._buffer_size;
+			str = static_cast<char*>(ST_MEM(_buffer_size));
+			if (str != nullptr) {
+				strcpy(str, other.str);
+			}
+			__owner = true;
+		}
+		return *this;
+	}
+	New_String(New_String&& other) noexcept : 
+    str(other.str), 
+    _buffer_size(other._buffer_size), 
+    __owner(other.__owner) {
+		other.str = nullptr;
+		other._buffer_size = 0;
+		other.__owner = false;
+	}
+	New_String& operator=(New_String&& other) noexcept {
+		if (this != &other) {
+			if (__owner && str) {
+				ST_FREE(str, _buffer_size);
+			}
+
+			str = other.str;
+			_buffer_size = other._buffer_size;
+			__owner = other.__owner;
+
+			other.str = nullptr;
+			other._buffer_size = 0;
+			other.__owner = false;
+		}
+		return *this;
+	}
+
+
+
 	inline ~New_String() {
 		if (__owner) ST_FREE(str, _buffer_size);
 	}

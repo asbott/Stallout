@@ -22,6 +22,3 @@ if exist "deps\windows\bin\premake5.exe" (
     pause
     exit /b 1
 )
-
-:: Pause to keep the window open
-pause

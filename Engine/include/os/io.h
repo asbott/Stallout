@@ -3,6 +3,28 @@
 #include "Engine/stringutils.h"
 #include "Engine/containers.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+    #include <windows.h>
+    #define ST_MAX_PATH MAX_PATH
+#elif defined(__linux__) || defined(__unix__)
+    #include <limits.h>
+    #if defined(PATH_MAX)
+        #define ST_MAX_PATH PATH_MAX
+    #else
+        #define ST_MAX_PATH 320
+    #endif
+#elif defined(__APPLE__) && defined(__MACH__)
+    #include <sys/syslimits.h>
+    #if defined(PATH_MAX)
+        #define ST_MAX_PATH PATH_MAX
+    #else
+        #define ST_MAX_PATH 320
+    #endif
+#else
+    #define ST_MAX_PATH 320
+#endif
+
+
 enum Io_Status {
     IO_STATUS_OK,
     IO_STATUS_INVALID_PATH,
@@ -45,7 +67,9 @@ Io_Status ST_API remove(const char* path);
 Io_Status ST_API count_directory_entries(const char* dir_path, size_t* result);
 
 // Get all paths to all files and subdirectories in given directory
-Io_Status ST_API scan_directory(const char* dir_path, char** result);
+Io_Status ST_API scan_directory(const char* dir_path, char** result, size_t max_num_result = 100, size_t max_path = MAX_PATH);
+
+Io_Status ST_API to_absolute(const char* path, char* abs_path, size_t max_path = ST_MAX_PATH);
 
 
 // NOT OS SPECIFIC
@@ -53,6 +77,11 @@ Io_Status ST_API scan_directory(const char* dir_path, char** result);
 Io_Status ST_API read_all_lines(const char* path, engine::Array<New_String>* result);
 
 New_String ST_API get_exe_dir();
+
+// This is different from release build
+// and debug build, only use for testing
+// purposes.
+New_String ST_API get_workspace_dir();
 
 // Path manipulation
 New_String ST_API get_directory(const char* path); 

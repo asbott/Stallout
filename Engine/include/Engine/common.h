@@ -34,7 +34,7 @@
 
 #else
 
-	#define ST_ASSERT(expr, ...)expr
+	#define ST_ASSERT(expr, ...) (void)(expr)
 	#define ST_DEBUG_ASSERT(expr, ...)
 
 #endif
@@ -108,6 +108,19 @@
 	#warning could not define function signature macro for this compiler
 #endif
 
+struct Location_Info {
+	unsigned line_num;
+	const char* file;
+	const char* function;
+};
+inline std::ostream& operator<<(std::ostream& os, const Location_Info& info) {
+    os << "[" << info.file << ":" << info.function << ":" << info.line_num << "]";
+    return os;
+}
+#define _ST_PASS_LOCATION (Location_Info { (unsigned)__LINE__, __FILE__, _ST_FUNC_SIG })
+#define _ST_LOCATION Location_Info
+
+
 inline const char* __strip_func_sig_ns(const char* func) {
     const char* pos = strrchr(func, ':');
     if (pos != NULL && *(pos - 1) == ':') {
@@ -160,16 +173,33 @@ inline const char* __strip_func_sig_ns(const char* func) {
     v; \
 })
 
-
-
-#define MAX_PATH_LEN 320
-
 #ifndef _ST_RENDER_BACKEND_OPENGL45
 	#error Only opengl45 is supported at the moment
 #endif
 
-#define MZ_DLL
-
 #ifdef _ST_EXPORT
 	#define MZ_EXPORT
 #endif
+
+#define FLAGIFY(EnumType)                                   \
+inline EnumType operator|(EnumType lhs, EnumType rhs) {                   \
+    using Underlying = std::underlying_type_t<EnumType>;                  \
+    return static_cast<EnumType>(                                         \
+        static_cast<Underlying>(lhs) | static_cast<Underlying>(rhs));     \
+}                                                                        \
+                                                                         \
+inline EnumType& operator|=(EnumType& lhs, EnumType rhs) {                \
+    lhs = lhs | rhs;                                                      \
+    return lhs;                                                           \
+}                                                                        \
+                                                                         \
+inline EnumType operator&(EnumType lhs, EnumType rhs) {                   \
+    using Underlying = std::underlying_type_t<EnumType>;                  \
+    return static_cast<EnumType>(                                         \
+        static_cast<Underlying>(lhs) & static_cast<Underlying>(rhs));     \
+}                                                                        \
+                                                                         \
+inline EnumType& operator&=(EnumType& lhs, EnumType rhs) {                \
+    lhs = lhs & rhs;                                                      \
+    return lhs;                                                           \
+}
