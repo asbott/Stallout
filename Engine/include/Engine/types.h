@@ -31,12 +31,7 @@ __def_str_t(256);
 __def_str_t(512);
 __def_str_t(1024);
 
-#ifdef _ST_OS_WINDOWS 
-    typedef str_t<260> path_str_t;
-#else
-    typedef str1024_t path_str_t;
-#endif
-typedef str128_t name_str_t;
+typedef str_t<260> path_str_t;
 
 typedef const char* str_ptr_t;
 

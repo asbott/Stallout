@@ -34,7 +34,7 @@ enum Player_State {
 typedef u32 audio_clip_t;
 constexpr audio_clip_t NULL_AUDIO_CLIP = 0;
 
-struct Audio_Context;
+struct Audio_Driver;
 
 // Not thread safe
 struct ST_API Audio_Player {
@@ -56,7 +56,7 @@ struct ST_API Audio_Player {
     mz::fvec3 direction = {0.0f, 0.0f, 0.0f};
 
     u32 _source_id;
-    Audio_Context* _context = NULL;
+    Audio_Driver* _context = NULL;
 
     // Get timer for current time into playback
     Timer get_timer();
@@ -76,10 +76,10 @@ struct ST_API Audio_Player {
 };
 
 
-struct ST_API Audio_Context {
+struct ST_API Audio_Driver {
 
-    Audio_Context(const char* device_name = NULL);
-    ~Audio_Context();
+    Audio_Driver(const char* device_name = NULL);
+    ~Audio_Driver();
 
     audio_clip_t create_clip(void* data, Audio_Format format, u64 frame_count, u32 sample_rate);
     audio_clip_t create_clip(void* data, u32 channels, u32 bits_per_sample, u64 frame_count, u32 sample_rate);

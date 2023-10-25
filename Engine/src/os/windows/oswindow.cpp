@@ -10,6 +10,11 @@
 
 #include "Engine/logger.h"
 
+#include "Windows.h"
+#include "os/windows/winutils.h"
+
+#include "Engine/timing.h"
+
 NS_BEGIN(os);
 UINT to_win32_input_code(Input_Code code) {
     switch(code) {
@@ -233,6 +238,11 @@ Input_Code to_st_input_code(u64 os_code) {
         case VK_XBUTTON1: return INPUT_CODE_MOUSE_BUTTON4;
         case VK_XBUTTON2: return INPUT_CODE_MOUSE_BUTTON5;
 
+        case VK_LEFT: return INPUT_CODE_LEFT_ARROW;
+        case VK_RIGHT: return INPUT_CODE_RIGHT_ARROW;
+        case VK_UP: return INPUT_CODE_UP_ARROW;
+        case VK_DOWN: return INPUT_CODE_DOWN_ARROW;
+
         default: ST_ASSERT(false); return INPUT_CODE_COUNT;  // Undefined or unhandled input code
     }
 }
@@ -389,9 +399,9 @@ Mouse_Source get_mouse_source() {
         return MOUSE_SOURCE_MOUSE;
 }
 
-void* event_from_win32_message(os::Window* wnd, UINT message, WPARAM wParam, LPARAM lParam, engine::Linear_Allocator* event_buffer) {
+void* event_from_win32_message(os::Window* wnd, UINT message, WPARAM wParam, LPARAM lParam) {
 
-    #define __NEW_EVENT(t) event_buffer->allocate_and_construct<t>()
+    #define __NEW_EVENT(t) stnew (t) /*event_buffer->allocate_and_construct<t>()*/
 
     switch(message) {
         case WM_MOUSEMOVE:
@@ -400,18 +410,21 @@ void* event_from_win32_message(os::Window* wnd, UINT message, WPARAM wParam, LPA
             
             s32 x = LOWORD(lParam); 
             s32 y = HIWORD(lParam);
+            
+            
+
             auto e = __NEW_EVENT(Mouse_Move_Event);
 
             e->in_window = message == WM_MOUSEMOVE;
 
             if (e->in_window) {
                 e->screen_mouse_x = e->window_mouse_x = x;
-                e->screen_mouse_y = e->window_mouse_x = y;
+                e->screen_mouse_y = e->window_mouse_y = y;
 
                 wnd->client_to_screen(&e->screen_mouse_x, &e->screen_mouse_y);
             } else {
                 e->screen_mouse_x = e->window_mouse_x = x;
-                e->screen_mouse_y = e->window_mouse_x = y;
+                e->screen_mouse_y = e->window_mouse_y = y;
 
                 wnd->screen_to_client(&e->window_mouse_x, &e->window_mouse_y);
             }
@@ -490,14 +503,17 @@ void* event_from_win32_message(os::Window* wnd, UINT message, WPARAM wParam, LPA
 
 struct Internal {
     bool exit_flag = false;
+    HDC hdc = 0;
 };
 static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+
+    win32::clear_error();
     Window* window = nullptr;
     if (message == WM_CREATE) {
         window = (Window*)((CREATESTRUCT*)lParam)->lpCreateParams;
-        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)window);
+        WIN32_CALL(SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)window));
     } else {
-        window = (Window*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        window = (Window*)WIN32_CALL(GetWindowLongPtr(hWnd, GWLP_USERDATA));
     }
 
     if (window) {
@@ -505,13 +521,8 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARA
         if (etype != WINDOW_EVENT_TYPE_UNIMPLEMENTED) {
             
             void* event = NULL; 
-            {
-                std::lock_guard lock(window->_event_queue_mutex);
-                event = event_from_win32_message(window, message, wParam, lParam, &window->_event_buffer);
-            }
-            window->_on_event(etype, event);
-            //if (window->_event_callback) window->_event_callback(window, etype, event, window->_event_userdata);
-            //free_window_event(etype, event);
+            event = event_from_win32_message(window, message, wParam, lParam);
+            if (!window->dispatch_event(etype, event)) return TRUE;
         }
         if (message == WM_KEYDOWN || message == WM_KEYUP) {
             Input_Code code = static_cast<Input_Code>(to_st_input_code(wParam));
@@ -519,19 +530,24 @@ static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARA
             window->input._input_states[code] = (message == WM_KEYDOWN) ? INPUT_STATE_DOWN : INPUT_STATE_UP;
         }
         if (message == WM_MOUSEMOVE) {
-            window->input._mouse_x = static_cast<double>(LOWORD(lParam)); 
-            window->input._mouse_y = static_cast<double>(HIWORD(lParam));
+            s32 w, h;
+            window->get_size(&w, &h);
+            window->input._mouse_x = std::max((double)((s32)LOWORD(lParam)), 0.0); 
+            window->input._mouse_y = std::min((double)((s32)HIWORD(lParam)), (double)h);
         }
-        switch (message) {
-            case WM_DESTROY:
-            {
-                ((Internal*)window->__internal)->exit_flag = true;
-                PostQuitMessage(0);
-                return 0;   
-            }
-        }  
+        if (((Internal*)window->__internal)->exit_flag) {
+            return TRUE;
+        }
+        if (message == WM_DESTROY) {
+            ((Internal*)window->__internal)->exit_flag = true;
+            WIN32_CALL(PostQuitMessage(0));
+        }
+
     }
-    return DefWindowProcA(hWnd, message, wParam, lParam);
+
+
+    
+    return WIN32_CALL(DefWindowProcA(hWnd, message, wParam, lParam));
 }
 
 
@@ -550,14 +566,14 @@ Window::Window(const Window_Init_Spec& wnd_spec, Window* parent) {
             wc->cbSize = sizeof(WNDCLASSEXA);
             wc->style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
             wc->lpfnWndProc = WindowProc;
-            wc->hInstance = GetModuleHandleA(nullptr);
+            wc->hInstance = WIN32_CALL(GetModuleHandleA(nullptr));
             wc->lpszClassName = "StalloutWindowClass";
             wc->cbClsExtra = 0;
             wc->cbWndExtra = 0;
             wc->hIconSm = nullptr;
             wc->lpszMenuName = nullptr;
             wc->hbrBackground = (HBRUSH)(COLOR_BACKGROUND + 1);
-            ST_ASSERT(RegisterClassExA(wc), "Window class registration failed");
+            WIN32_CALL(RegisterClassExA(wc));
         }
     }
     
@@ -565,7 +581,7 @@ Window::Window(const Window_Init_Spec& wnd_spec, Window* parent) {
     auto y = wnd_spec.y;
     auto width = wnd_spec.width;
     auto height = wnd_spec.height;
-    if (wnd_spec.size_includes_styles) {
+    if (!wnd_spec.size_includes_styles) {
         RECT rect = { (LONG)wnd_spec.x, (LONG)wnd_spec.y, (LONG)(wnd_spec.x + wnd_spec.width), (LONG)(wnd_spec.y + wnd_spec.height) };
         AdjustWindowRectEx(&rect, to_win32_enum(wnd_spec.style), FALSE, to_win32_enum(wnd_spec.style_ex));
 
@@ -578,7 +594,9 @@ Window::Window(const Window_Init_Spec& wnd_spec, Window* parent) {
     _current_style = wnd_spec.style;
     _current_style_ex = wnd_spec.style_ex;
 
-    _os_handle = CreateWindowExA(
+    __internal = ST_NEW(Internal);
+
+    _os_handle = WIN32_CALL(CreateWindowExA(
         to_win32_enum(wnd_spec.style_ex),
         "StalloutWindowClass",
         wnd_spec.title,
@@ -592,24 +610,31 @@ Window::Window(const Window_Init_Spec& wnd_spec, Window* parent) {
         nullptr,
         GetModuleHandleA(nullptr),
         nullptr
-    );
+    ));
+
+    _device_context = stnew (graphics::Device_Context)(this);
 
     _is_main = parent == NULL;
     _parent = parent;
 
     ST_ASSERT(_os_handle, "Window creation failed");
 
-    SetWindowLongPtr((HWND)_os_handle, GWLP_USERDATA, (LONG_PTR)this);
+    
 
-    ShowWindow((HWND)_os_handle, wnd_spec.visible ? SW_SHOW : SW_HIDE);
+    WIN32_CALL(SetWindowLongPtr((HWND)_os_handle, GWLP_USERDATA, (LONG_PTR)this));
 
-    __internal = ST_NEW(Internal);
+    WIN32_CALL(ShowWindow((HWND)_os_handle, wnd_spec.visible ? SW_SHOW : SW_HIDE));
+
+
+    _device_context->bind();
+    ((Internal*)__internal)->hdc = WIN32_CALL(GetDC((HWND)_os_handle));
+    _device_context->unbind();
 
     log_info("Window '{}' was created", wnd_spec.title);
 }
 
 Window::~Window() {
-    _event_callback = NULL;
+    event_callbacks.clear();
     for (s64 i = _children.size() - 1; i >= 0; i--) {
         ST_DELETE(_children[i]);
         _children.erase(i);
@@ -624,24 +649,24 @@ Window::~Window() {
         
     }
 
-    DestroyWindow((HWND)_os_handle);
+    WIN32_CALL(ReleaseDC((HWND)_os_handle, ((Internal*)__internal)->hdc));
+    WIN32_CALL(DestroyWindow((HWND)_os_handle));
 }
 
-void Window::set_event_callback(window_event_callback_t callback, void* userdata) {
-    std::lock_guard lock(_event_queue_mutex);
-    _event_callback = callback;
-    _event_userdata = userdata;
+void Window::add_event_callback(window_event_callback_t callback, void* userdata) {
+    event_callbacks.push_back({ callback, userdata });
 }
 
 void Window::set_size(s32 width, s32 height) {
     RECT rect = { 0, 0, (LONG)width, (LONG)height };
     
     AdjustWindowRectEx(&rect, to_win32_enum(_current_style), FALSE, to_win32_enum(_current_style_ex));
-    SetWindowPos((HWND)_os_handle, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+    WIN32_CALL(SetWindowPos((HWND)_os_handle, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE));
 }
 bool Window::get_size(s32* width, s32* height) const{
+    tm_func();
     RECT rect;
-    BOOL result = GetClientRect((HWND)_os_handle, &rect);
+    BOOL result = WIN32_CALL(GetClientRect((HWND)_os_handle, &rect));
     *width = rect.right - rect.left;
     *height = rect.bottom - rect.top;
     return result == TRUE;
@@ -649,11 +674,11 @@ bool Window::get_size(s32* width, s32* height) const{
 void Window::set_position(s32 x, s32 y) {
     RECT rect = { (LONG)x, (LONG)y, (LONG)x, (LONG)y };
     ::AdjustWindowRectEx(&rect, to_win32_enum(_current_style), FALSE, to_win32_enum(_current_style_ex));
-    ::SetWindowPos((HWND)_os_handle, nullptr, rect.left, rect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+    WIN32_CALL(::SetWindowPos((HWND)_os_handle, nullptr, rect.left, rect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE));
 }
 bool Window::get_position(s32* x, s32* y) const{
     POINT pos = { 0, 0 };
-    auto result = ClientToScreen((HWND)_os_handle, &pos);
+    auto result = WIN32_CALL(ClientToScreen((HWND)_os_handle, &pos));
     *x = pos.x;
     *y = pos.y;
     return result == TRUE;
@@ -662,33 +687,34 @@ bool Window::get_position(s32* x, s32* y) const{
 
 void Window::set_fullscreen(bool fullscreen) {
     if (fullscreen) {
-        SetWindowLongA((HWND)_os_handle, GWL_STYLE, GetWindowLongA((HWND)_os_handle, GWL_STYLE) & ~WS_OVERLAPPEDWINDOW);
+        WIN32_CALL(SetWindowLongA((HWND)_os_handle, GWL_STYLE, GetWindowLongA((HWND)_os_handle, GWL_STYLE) & ~WS_OVERLAPPEDWINDOW));
     } else {
-        SetWindowLongA((HWND)_os_handle, GWL_STYLE, GetWindowLongA((HWND)_os_handle, GWL_STYLE) | WS_OVERLAPPEDWINDOW);
+        WIN32_CALL(SetWindowLongA((HWND)_os_handle, GWL_STYLE, GetWindowLongA((HWND)_os_handle, GWL_STYLE) | WS_OVERLAPPEDWINDOW));
     }
 }
 
 void Window::set_title(const char* title) {
-    SetWindowTextA((HWND)_os_handle, title);
+    WIN32_CALL(SetWindowTextA((HWND)_os_handle, title));
 }
 
 
 void Window::set_focus(bool focused) {
     if (focused) {
-        BringWindowToTop((HWND)_os_handle);
-        SetForegroundWindow((HWND)_os_handle);
-        SetFocus((HWND)_os_handle);
+        WIN32_CALL(BringWindowToTop((HWND)_os_handle));
+        WIN32_CALL(SetForegroundWindow((HWND)_os_handle));
+        WIN32_CALL(SetFocus((HWND)_os_handle));
     }
     else {
         // TODO: #unfinished
+        // Not sure if unfocusing is actually a thing
     }
 }
 
 void Window::set_visibility(bool visible) {
     if (visible) {
-        ShowWindow((HWND)_os_handle, SW_SHOW);
+        WIN32_CALL(ShowWindow((HWND)_os_handle, SW_SHOW));
     } else {
-        ShowWindow((HWND)_os_handle, SW_HIDE);
+        WIN32_CALL(ShowWindow((HWND)_os_handle, SW_HIDE));
     }
 }
 
@@ -696,14 +722,14 @@ void Window::set_alpha(float alpha) {
     assert(alpha >= 0.0f && alpha <= 1.0f);
     if (alpha < 1.0f)
     {
-        DWORD style = ::GetWindowLongW((HWND)_os_handle, GWL_EXSTYLE) | WS_EX_LAYERED;
-        ::SetWindowLongW((HWND)_os_handle, GWL_EXSTYLE, style);
-        ::SetLayeredWindowAttributes((HWND)_os_handle, 0, (BYTE)(255 * alpha), LWA_ALPHA);
+        DWORD style = WIN32_CALL(::GetWindowLongW((HWND)_os_handle, GWL_EXSTYLE) | WS_EX_LAYERED);
+        WIN32_CALL(::SetWindowLongW((HWND)_os_handle, GWL_EXSTYLE, style));
+        WIN32_CALL(::SetLayeredWindowAttributes((HWND)_os_handle, 0, (BYTE)(255 * alpha), LWA_ALPHA));
     }
     else
     {
-        DWORD style = ::GetWindowLongW((HWND)_os_handle, GWL_EXSTYLE) & ~WS_EX_LAYERED;
-        ::SetWindowLongW((HWND)_os_handle, GWL_EXSTYLE, style);
+        DWORD style = WIN32_CALL(::GetWindowLongW((HWND)_os_handle, GWL_EXSTYLE) & ~WS_EX_LAYERED);
+        WIN32_CALL(::SetWindowLongW((HWND)_os_handle, GWL_EXSTYLE, style));
     }
 }
 
@@ -718,13 +744,13 @@ void Window::set_parent(Window* new_parent) {
         }
     }
     if (!new_parent) {
-        //SetWindowLongPtrA((HWND)this->_os_handle, GWLP_HWNDPARENT, 0);    
+        //WIN32_CALL(SetWindowLongPtrA((HWND)this->_os_handle, GWLP_HWNDPARENT, 0));    
         return;
     }
     _parent = new_parent;
     new_parent->_children.push_back(this);
 
-    //SetWindowLongPtrA((HWND)this->_os_handle, GWLP_HWNDPARENT, (LONG_PTR)new_parent->_os_handle);
+    //WIN32_CALL(SetWindowLongPtrA((HWND)this->_os_handle, GWLP_HWNDPARENT, (LONG_PTR)new_parent->_os_handle));
 }
 
 Window* Window::add_child(const Window_Init_Spec& wnd_spec) {
@@ -749,27 +775,31 @@ bool Window::exit_flag() const {
     return ((Internal*)__internal)->exit_flag;
 }
 bool Window::is_visible() const {
-    return IsWindowVisible((HWND)_os_handle);
+    return WIN32_CALL(IsWindowVisible((HWND)_os_handle));
 }
 bool Window::is_focused() const {
-    return GetForegroundWindow() == (HWND)_os_handle;
+    return WIN32_CALL(GetForegroundWindow()) == (HWND)_os_handle;
 }
 bool Window::is_minimized() const {
-    return IsIconic((HWND)_os_handle) != 0;
+    return WIN32_CALL(IsIconic((HWND)_os_handle) != 0);
 }
 bool Window::is_hovered() const {
     POINT pt;
-    GetCursorPos(&pt);
-    HWND hwndHovered = WindowFromPoint(pt);
+    WIN32_CALL(GetCursorPos(&pt));
+    HWND hwndHovered = WIN32_CALL(WindowFromPoint(pt));
     return hwndHovered == (HWND)_os_handle;
 }
 void* Window::get_monitor() const {
-    return MonitorFromWindow((HWND)_os_handle, MONITOR_DEFAULTTONEAREST);
+    return WIN32_CALL(MonitorFromWindow((HWND)_os_handle, MONITOR_DEFAULTTONEAREST));
+}
+
+graphics::Device_Context* Window::get_device_context() const {
+    return _device_context;
 }
 
 bool Window::screen_to_client(s32* x, s32* y) const {
     POINT p {*x, *y};
-    auto result = ScreenToClient((HWND)_os_handle, &p);
+    auto result = WIN32_CALL(ScreenToClient((HWND)_os_handle, &p));
     *x = p.x;
     *y = p.y;
 
@@ -777,7 +807,7 @@ bool Window::screen_to_client(s32* x, s32* y) const {
 }
 bool Window::client_to_screen(s32* x, s32* y) const {
     POINT p {*x, *y};
-    auto result = ClientToScreen((HWND)_os_handle, &p);
+    auto result = WIN32_CALL(ClientToScreen((HWND)_os_handle, &p));
     *x = p.x;
     *y = p.y;
 
@@ -785,55 +815,43 @@ bool Window::client_to_screen(s32* x, s32* y) const {
 }
 
 bool Window::has_captured_mouse() const {
-    return ::GetCapture() == (HWND)_os_handle;
+    return WIN32_CALL(::GetCapture()) == (HWND)_os_handle;
 }
 void Window::capture_mouse() {
     if (!has_captured_mouse()) {
-        ::SetCapture((HWND)_os_handle);
+        WIN32_CALL(::SetCapture((HWND)_os_handle));
         ST_ASSERT(has_captured_mouse());
     }
 }
 void Window::release_mouse() {
     if (has_captured_mouse()) {
-        ::ReleaseCapture();
+        WIN32_CALL(::ReleaseCapture());
     }
 }
 
-void Window::_on_event(Window_Event_Type etype, void* param) {
-    std::lock_guard lock(_event_queue_mutex);
+bool Window::dispatch_event(Window_Event_Type etype, void* param) {
+    for (auto& callback : event_callbacks) {
+        if (!callback.fn(this, etype, param, callback.ud)) return false;
+    }
 
-    _event_queue.push({ etype, param });
+    return true;
 }
 
 void Window::poll_events() {
-    std::lock_guard lock(_event_queue_mutex);
-
-    while (!_event_queue.empty()) {
-        auto e = _event_queue.front();
-
-        _event_callback(this, e.etype, e.param, _event_userdata);
-
-        _event_queue.pop();
-    }
-
-    for (auto child : _children) {
-        child->poll_events();
-    }
-
-    _event_buffer.reset();
-}
-
-void Window::swap_buffers() {
-
     MSG msg;
     while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+}
 
-    auto hdc = GetDC((HWND)_os_handle);
-    SwapBuffers(hdc);
-    ReleaseDC((HWND)_os_handle, hdc);
+void Window::swap_buffers() {
+    std::lock_guard lock(_device_context->_mutex.m); // Avoid sync issues when bind/unbinding device context
+    auto hdc = WIN32_CALL(GetDC((HWND)_os_handle));
+    SwapBuffers(hdc); // This for some reason sets win32 error 126 which
+                      // is for LoadLibrary or GetProcAddress failure............
+    SetLastError(0);
+    WIN32_CALL(ReleaseDC((HWND)_os_handle, hdc));
 }
 
 Input_State Window::Input::get_state(Input_Code code) const {

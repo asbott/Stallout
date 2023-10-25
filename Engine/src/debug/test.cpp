@@ -16,7 +16,7 @@ void log_duration(const char* msg, std::chrono::steady_clock::time_point start, 
 }
 
 #ifdef _ST_CONFIG_DEBUG
-#define MEM_TEST(...) { ST_ASSERT(start_mem == engine::Global_Allocator::get_used_mem(), "Memory leak. Last was {}, now {}", start_mem, engine::Global_Allocator::get_used_mem()); start_mem = engine::Global_Allocator::get_used_mem(); }
+#define MEM_TEST(...) { ST_ASSERT(start_mem == engine::Global_Allocator::get_stats().in_use(), "Memory leak. Last was {}, now {}", start_mem, engine::Global_Allocator::get_stats().in_use()); start_mem = engine::Global_Allocator::get_stats().in_use(); }
 #else
 #define MEM_TEST(...)
 #endif
@@ -29,7 +29,8 @@ void log_duration(const char* msg, std::chrono::steady_clock::time_point start, 
 
 void test_allocators() {
 
-    IN_DEBUG_ONLY(size_t start_mem = engine::Global_Allocator::get_used_mem(););
+    size_t start_mem = engine::Global_Allocator::get_stats().in_use();
+    (void)start_mem;
 
     // Testing single allocation and deallocation
     MEM_TEST();
@@ -65,7 +66,7 @@ void test_allocators() {
         
 
         engine::Array<std::thread> threads;
-        for(int i = 0; i < 100; ++i) {
+        for(int i = 0; i < 1000; ++i) {
             threads.push_back(std::thread([](){
                 Complex* complex = stnew (Complex) (42, "hello");
                 ST_ASSERT(complex != nullptr && complex->x == 42 && complex->s == "hello", "Complex object allocation failed");
@@ -155,8 +156,9 @@ void test_allocators() {
     // Stress testing for concurrency
     MEM_TEST();
     {
+        size_t nthreads = std::thread::hardware_concurrency();
         std::vector<std::thread> threads;
-        for(int i = 0; i < 100; ++i) {
+        for(int i = 0; i < nthreads; ++i) {
             threads.push_back(std::thread([](){
                 for (int j = 0; j < 1000; ++j) {
                     int* multi = stnew (int)(j);

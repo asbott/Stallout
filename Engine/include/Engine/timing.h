@@ -1,6 +1,23 @@
 #pragma once
 
+#include <fstream>
+
 #pragma warning(disable: 4251)
+
+//#define ST_ENABLE_TIME_PROFILING
+#ifdef ST_ENABLE_TIME_PROFILING
+
+#define tm_func(...) ::engine::Scoped_Time_Recorder _______func_rec(_ST_FUNC_SIG)
+#define tm_scope(sname) ::engine::Scoped_Time_Recorder _______scope_rec(sname)
+
+#else
+
+#define tm_func(...)
+#define tm_scope(...)
+
+#endif
+
+
 
 NS_BEGIN(engine)
     struct ST_API Duration {
@@ -38,5 +55,17 @@ NS_BEGIN(engine)
         Duration record() const;
 
         friend std::ostream& operator<<(std::ostream& os, const Timer& timer);
+    };
+
+    ST_API void open_time_profiler(const char* filepath);
+    ST_API void close_time_profiler();
+
+    struct ST_API Scoped_Time_Recorder {
+        Scoped_Time_Recorder(const char* name);
+        ~Scoped_Time_Recorder();
+
+        const char *const name;
+        s64 start;
+        Timer timer;
     };
 NS_END(engine)

@@ -3,6 +3,7 @@
 #include "os/modules.h"
 
 #include "windows.h"
+#include "os/windows/winutils.h"
 
 #define INIT_MOD_FN(name) { if (auto pfn = GetProcAddress(win32_handle, #name)) this->name = (name##_fn_t)pfn;}
 
@@ -18,11 +19,12 @@ Module::Module(str_ptr_t path) {
 
     __os_handle = static_cast<void*>(win32_handle);
 
-    if (win32_handle) {
+    if (dwError == 0) {
         INIT_MOD_FN(init);
         INIT_MOD_FN(update);
         INIT_MOD_FN(deinit);
         _status = MODULE_STATUS_OK;
+        os::win32::clear_error(); // Functions are optional
     } else {
         switch(dwError) {
             case ERROR_FILE_NOT_FOUND:
@@ -47,6 +49,7 @@ Module::Module(str_ptr_t path) {
                 _status = MODULE_STATUS_UNKNOWN_ERROR;
                 break;
         }
+        os::win32::clear_error();
     }
 }
 Module::~Module() {

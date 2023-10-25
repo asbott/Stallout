@@ -3,123 +3,44 @@
 #include "Engine/memory.h"
 #include "Engine/timing.h"
 #include "Engine/utils.h"
+#include "Engine/containers.h"
 
-#include "os/graphics.h"
-
-#include "Engine/renderer/rendercommands.h"
+#include "Engine/graphics/graphics_commands.h"
 
 #include <mz_vector.hpp>
 
+NS_BEGIN(os)NS_BEGIN(graphics);
+struct Device_Context;
+NS_END(os); NS_END(graphics);
+
 NS_BEGIN(engine);
-NS_BEGIN(renderer);
+NS_BEGIN(graphics);
 
+using namespace os::graphics;
 
-
-
-struct Render_Context;
-struct Render_Window;
-
-typedef std::function<bool(Render_Window*, os::Window_Event_Type, void* param, void* userdata)> render_window_callback_t;
-
-// Frontend for os::Window. s window calls
-// to the render thread in associated context
-struct ST_API Render_Window {
-    struct Window_Event_Callback {
-        render_window_callback_t fn;
-        void* user_data = NULL;
-    };
-    // This may be null while waiting for render thread.
-    // It should be fine as long as all calls to _backend
-    // are on the render thread. Void* because it's not
-    // meant to be used directly here only passed as a
-    // handle
-    os::Window* _backend; 
-    utils::Double_Buffered_Thread* _render_thread;
-    Render_Context *const _context;
-    engine::Hash_Map<os::Window_Event_Type, engine::Array<Window_Event_Callback>> _specific_event_callbacks; 
-    engine::Array<Window_Event_Callback> _event_callbacks;
-    engine::Array<Render_Window*> _children;
-    Render_Window* _parent;
-    bool _dead = false;
-    os::graphics::OS_Graphics_Context* _os_context;
-
-    // This is state which needs to be queried from the
-    // backend which is done in __query_backend() on the
-    // render thread. It is readonly. It's only possible
-    // to change state in the backend with functions
-
-    Render_Window(Render_Context* context, utils::Double_Buffered_Thread* render_thread, os::Window* backend);
-    Render_Window(Render_Window* parent, os::Window* backend);
-    ~Render_Window();
-
-    void add_event_callback(render_window_callback_t callback, void* userdata = NULL);
-    void add_event_callback(os::Window_Event_Type event, render_window_callback_t callback, void* userdata = NULL);
-
-    void set_parent(Render_Window* new_parent);
-    Render_Window* add_child(os::Window_Init_Spec spec);
-
-    void dispatch_event(u32 type, void* param);
-
-    bool exit_flag() const;
-
-    void poll_events();
-    void swap_buffers();
-
-    void set_position(const mz::s32vec2& pos);
-    mz::s32vec2 get_position();
-    void set_size(const mz::s32vec2& sz);
-    mz::s32vec2 get_size();
-
-    mz::s32vec2 screen_to_client(mz::s32vec2 screen) const;
-    mz::s32vec2 client_to_screen(mz::s32vec2 client) const;
-
-    bool has_captured_mouse() const;
-    void capture_mouse();
-    void release_mouse();
-
-    bool is_input_down(os::Input_Code code) const; 
-
-    void set_visibility(bool visible);
-    void set_focus(bool focused = true);
-    void set_title(const char* title);
-    void set_alpha(float alpha);
-
-    bool is_visible() const;
-    bool is_focused() const;
-    bool is_minimized() const;
-    bool is_hovered() const;
-    void* get_monitor() const;
-
-    void _init_backend(os::Window* backend);
-    void _send(std::function<void(os::Window*)>);
-    void __query_backend(os::Window* backend);
-};
-
-struct Promise {
-
-    bool done = false;
-    std::mutex mtx;
-    std::condition_variable cond;
-
-    void wait() {
-        std::unique_lock lock(mtx);
-        cond.wait(lock, [&]() { return done; });
-    }
-};
-typedef std::function<void()> priority_task_t;
+struct Graphics_Driver;
 
 struct Mapping_Promise;
 
-struct ST_API Render_Context {
+enum Target_Context_State {
+    TARGET_CONTEXT_STATE_AVAILABLE,
+    TARGET_CONTEXT_STATE_RENDERER_ACQUIRED,
+    TARGET_CONTEXT_STATE_CLIENT_ACQUIRED,
+    TARGET_CONTEXT_STATE_REQUEST
+};
+
+struct ST_API Graphics_Driver {
     
     struct Environment {
         const char* vendor, *hardware, *driver, *version, *shading_version;
         u32 version_major, version_minor;
+
+        u32 max_texture_slots;
     };
 
     struct _Mapping_Promise;
 
-    utils::Double_Buffered_Thread _render_thread;
+    utils::Double_Buffered_Thread* _render_thread;
     bool _running = true;
     Block_Allocator _id_allocator;
     Duration _frame_time;
@@ -129,22 +50,15 @@ struct ST_API Render_Context {
     bool _ready = false;
     Environment _env;
     mutable std::mutex _env_mutex;
-
-    struct Priority_Task {
-        priority_task_t task;
-        Promise* promise;
-    };
-    Queue<Priority_Task> _priority_queue;
-    std::mutex _priority_mutex;
-    
-    Render_Window* _frontend_window; // For use on main thread, send command to render thread
-    os::Window* __backend_window; // For use on render thread
-
-    Render_Window* _current_target;
+    Device_Context* _target = NULL;
+    std::atomic<Target_Context_State> _context_state = TARGET_CONTEXT_STATE_AVAILABLE;
+    std::mutex _context_cond_mutex;
+    std::mutex _context_mutex;
+    std::mutex _context_state_mutex;
+    std::condition_variable _client_request_cond;
+    std::condition_variable _render_release_cond;
 
     void* __internal = NULL;
-
-    
 
     struct _Mapping_Promise {
         std::mutex mut;
@@ -173,14 +87,15 @@ struct ST_API Render_Context {
     };
     
 
-    Render_Context(size_t buffer_size);
-    ~Render_Context();
+    Graphics_Driver(Device_Context* target, size_t buffer_size);
+    ~Graphics_Driver();
 
     void wait_ready();
     
     Resource_Handle create(Resource_Type resource_type, const void* data, size_t data_size);
     void submit(Render_Message message, const void* data, size_t data_size);
     void set(Resource_Handle hnd, Resource_Type resource_type, const void* data, size_t data_size);
+    void append(Resource_Handle hnd, Resource_Type resource_type, const void* spec, size_t spec_size, const void* data, size_t data_size);
     void destroy(Resource_Handle hnd);
 
     template <typename type_t>
@@ -193,37 +108,16 @@ struct ST_API Render_Context {
         static_assert(std::is_trivially_copyable<type_t>());
         this->submit(type_t::message, &data, sizeof(type_t));
     }
-
-    
-    void map_buffer(Resource_Handle buffer_hnd, Buffer_Access_Mode access_Mode, const std::function<void(void*)>& result_callback);
-    void unmap_buffer(Resource_Handle buffer_hnd);
-
-    Environment get_environment() const;
-
-    void swap_command_buffers();
-
-    void set_target(Render_Window* target);
-    Render_Window* get_current_target() const;
-
-    void do_now(priority_task_t task) {
-        Promise promise;
-        {
-            std::lock_guard lock(_priority_mutex);
-            _priority_queue.push({ task, &promise });
-        }
-        // TODO: (2023-09-05) #unfinished #hacky
-        // Should just rewrite double buffered thread
-        // to deal with priority commands. Maybe completely
-        // refactor to just wrap around a Worker_Thread
-        _render_thread._read_condition.notify_one();
-        promise.wait();
+    template <typename type_t>
+    void append(Resource_Handle hnd, const type_t& spec, const void* data) {
+        static_assert(std::is_trivially_copyable<type_t>());
+        this->append(hnd, type_t::type, &spec, sizeof(spec), data, spec.data_size);
     }
 
-    //////////////////////////////////////////
-    // Implemented per graphics API
+    void client_acquire_target_context();
+    void client_release_target_context();
 
-    const Resource_Meta_Info& get_resource_meta(Resource_Handle hnd) const;
-    Resource_State get_resource_state(Resource_Handle hnd) const;
+    void sync(); // Wait for render thread to finish current command buffer
 
     struct _Query_Result {
         byte_t ptr[16];
@@ -240,11 +134,34 @@ struct ST_API Render_Context {
         memcpy(out_result, _res.ptr, std::min(sizeof(type_t), sizeof(_res.ptr)));
         return true;
     }
+    
+    void map_buffer(Resource_Handle buffer_hnd, Buffer_Access_Mode access_Mode, const std::function<void(void*)>& result_callback);
+    void unmap_buffer(Resource_Handle buffer_hnd);
+
+    const Environment& get_environment() const;
+
+    void swap_command_buffers();
+
+    void set_target(Device_Context* target);
+    Device_Context* get_current_target() const;
+
+    //////////////////////////////////////////
+    // Implemented per graphics API
+
+    // Implementations can always expect the current
+    // context to be properly bound.
+
+    const Resource_Meta_Info& get_resource_meta(Resource_Handle hnd) const;
+    Resource_State get_resource_state(Resource_Handle hnd) const;
+
+    bool __internal_query(Query_Type type, _Query_Result* result);
 
     // Internal
     void __internal_init();
     void __internal_handle_command(Render_Command* header, void* data); 
     void __internal_shutdown();
+    void __internal_on_context_change();
+    void __internal_on_command_send(Render_Command* header, const void* data);
 
     void __enter_loop(std::mutex*);
 
@@ -253,10 +170,6 @@ struct ST_API Render_Context {
 
 
     // Renderer API
-
-    Render_Window* get_window() const {
-        return this->_frontend_window;
-    }
 
     void set_clear_color(const mz::color& clear_color) {
         spec::submit::Set_Clear_Color spec;
@@ -277,7 +190,7 @@ struct ST_API Render_Context {
         return this->create(spec);
     }
     Resource_Handle create_buffer_layout(const std::initializer_list<Buffer_Layout_Entry>& entries) {
-        engine::renderer::spec::create::Buffer_Layout spec(entries);
+        engine::graphics::spec::create::Buffer_Layout spec(entries);
         return this->create(spec);
     }
     Resource_Handle create_texture(
@@ -308,6 +221,13 @@ struct ST_API Render_Context {
     void set_buffer(Resource_Handle hbuffer, void* data, size_t size) {
         this->set(hbuffer, RESOURCE_TYPE_BUFFER, data, size);
     }
+    void append_to_buffer(Resource_Handle hbuffer, size_t offset, const void* data, size_t data_size) {
+        if (data_size == 0) return;
+        spec::append::Buffer spec;
+        spec.offset = offset;
+        spec.data_size = data_size;
+        this->append(hbuffer, spec, data);
+    }
     void set_texture2d(Resource_Handle htexture, void* data, size_t size) {
         this->set(htexture, RESOURCE_TYPE_TEXTURE2D, data, size);
     }
@@ -336,6 +256,11 @@ struct ST_API Render_Context {
 		this->submit(clear_spec);
     }
 
+    void clear(Clear_Flags clear_flags, const mz::fcolor16& clear_color) {
+        this->set_clear_color(clear_color);
+        this->clear(clear_flags);
+    }
+
     void draw_indexed(Resource_Handle hlayout, Resource_Handle hvertex_buffer, Resource_Handle hindex_buffer, Resource_Handle hshader, size_t index_count, Data_Type indices_type = DATA_TYPE_UINT, size_t indices_offset = 0, Draw_Mode draw_mode = DRAW_MODE_TRIANGLES) {
         spec::submit::Draw_Indexed spec;
         spec.layout = hlayout;
@@ -353,6 +278,10 @@ struct ST_API Render_Context {
     template <typename type_t>
     void set_buffer(Resource_Handle hbuffer, type_t* data) {
         this->set_buffer(hbuffer, data, sizeof(type_t));
+    }
+    template <typename type_t>
+    void append_to_buffer(Resource_Handle hbuffer, size_t offset, type_t* data) {
+        this->append_to_buffer(hbuffer, offset, data, sizeof(type_t));
     }
 
     void set_blending(Blend_Equation eq, Blend_Func_Factor src_color_factor, Blend_Func_Factor dst_color_factor, Blend_Func_Factor src_alpha_factor, Blend_Func_Factor dst_alpha_factor) {
@@ -403,5 +332,5 @@ struct ST_API Render_Context {
     }
 };
 
-NS_END(renderer);
+NS_END(graphics);
 NS_END(engine);

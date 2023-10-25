@@ -14,6 +14,7 @@
 
 bool check_al_errors(const char* filename, u32 line)
 {
+    (void)filename;(void)line;
     ALenum error = alGetError();
     if(error != AL_NO_ERROR)
     {
@@ -176,7 +177,7 @@ void Audio_Player::stop() {
 
 
 
-Audio_Context::Audio_Context(const char* device_name) {
+Audio_Driver::Audio_Driver(const char* device_name) {
     _device = alcOpenDevice(device_name);
 
     ST_ASSERT(_device, "Failed opening AL device");
@@ -190,7 +191,7 @@ Audio_Context::Audio_Context(const char* device_name) {
     _default_player._context = this;
 }
 
-Audio_Context::~Audio_Context() {
+Audio_Driver::~Audio_Driver() {
     AL_CALL(alcMakeContextCurrent(_context));
     AL_CALL(alcDestroyContext(_context));
     AL_CALL(alcCloseDevice(_device));
@@ -198,7 +199,7 @@ Audio_Context::~Audio_Context() {
     log_info("Audio context successfully shut down");
 }
 
-audio_clip_t Audio_Context::create_clip(void* data, Audio_Format format, u64 frame_count, u32 sample_rate) {
+audio_clip_t Audio_Driver::create_clip(void* data, Audio_Format format, u64 frame_count, u32 sample_rate) {
     u32 channels = 0, bits_per_sample = 0;
     switch (format) {
         case AUDIO_FORMAT_MONO8:    channels = 1; bits_per_sample = 8; break;
@@ -210,7 +211,7 @@ audio_clip_t Audio_Context::create_clip(void* data, Audio_Format format, u64 fra
     return this->create_clip(data, channels, bits_per_sample, frame_count, sample_rate);
 }
 
-audio_clip_t Audio_Context::create_clip(void* data, u32 channels, u32 bits_per_sample, u64 frame_count, u32 sample_rate) {
+audio_clip_t Audio_Driver::create_clip(void* data, u32 channels, u32 bits_per_sample, u64 frame_count, u32 sample_rate) {
     AL_CALL(alcMakeContextCurrent(_context));
 
     ALuint buffer;
@@ -234,7 +235,7 @@ audio_clip_t Audio_Context::create_clip(void* data, u32 channels, u32 bits_per_s
     
     return (audio_clip_t)buffer;
 }
-audio_clip_t Audio_Context::create_clip_from_file(const char* filename) {
+audio_clip_t Audio_Driver::create_clip_from_file(const char* filename) {
     u32 channels, sample_rate, bits_per_sample;
     u64 frame_count;
     void* sound_data = utils::load_audio_from_file(filename, &channels, &sample_rate, &bits_per_sample, &frame_count);
@@ -242,7 +243,7 @@ audio_clip_t Audio_Context::create_clip_from_file(const char* filename) {
     return this->create_clip(sound_data, channels, bits_per_sample, frame_count, sample_rate);
 }
 
-void Audio_Context::destroy_clip(audio_clip_t clip) {
+void Audio_Driver::destroy_clip(audio_clip_t clip) {
     AL_CALL(alcMakeContextCurrent(_context));
     ST_ASSERT(AL_CALL(alIsBuffer(clip)), "Invalid audio clip handle");
     alDeleteBuffers(1, &clip);
@@ -252,7 +253,7 @@ void Audio_Context::destroy_clip(audio_clip_t clip) {
     ST_ASSERT(err == AL_NO_ERROR, "OpenAL Error");
 }
 
-Audio_Player* Audio_Context::create_player() {
+Audio_Player* Audio_Driver::create_player() {
     // TODO #performance? 
     // Maybe allocate contigiously but also probably doesn't really
     // matter because there's no reason to process several players
@@ -267,22 +268,22 @@ Audio_Player* Audio_Context::create_player() {
 
     return player;
 }
-void Audio_Context::destroy_player(Audio_Player* player) {
+void Audio_Driver::destroy_player(Audio_Player* player) {
     AL_CALL(alcMakeContextCurrent(_context));
     ST_ASSERT(AL_CALL(alIsSource(player->_source_id)), "Invalid player");
     alDeleteSources(1, &player->_source_id);
 }
 
-void Audio_Context::play(audio_clip_t clip, mz::fvec3 position) {
+void Audio_Driver::play(audio_clip_t clip, mz::fvec3 position) {
     _default_player.position = position;
     _default_player.play(clip);
 }
 
-void Audio_Context::pause() {
+void Audio_Driver::pause() {
     _default_player.pause();
 }
 
-void Audio_Context::stop() {
+void Audio_Driver::stop() {
     _default_player.stop();
 }
 

@@ -1,10 +1,11 @@
 #include "pch.h"
 
-#include "renderer/rendercontext.h"
+#include "graphics/graphics_driver.h"
 #include "Engine/logger.h"
 #include "Engine/stringutils.h"
 #include "Engine/maths.h"
 
+#include "os/os.h"
 
 #include <glad/glad.h>
 
@@ -137,7 +138,7 @@ bool has_single_uniform(GLuint shader) {
 
 
 NS_BEGIN(engine);
-NS_BEGIN(renderer);
+NS_BEGIN(graphics);
 
 // GL ids are unique per resource type
 // So we need to convert between gl ids
@@ -667,11 +668,9 @@ struct Layout_State {
 };
 
 
-// !WARNING
-// Only store state that can be shared between
-// contexts I.E. resources & data but not bindings
+
 struct GL_State {
-    std::mutex resource_meta_map_mutex;
+    std::mutex internal_state_mutex;
     Hash_Map<Resource_ID, Resource_Handle> handle_map;
     Hash_Map<Resource_ID, Resource_Meta_Info> resource_meta_map; // Stored per ID
 
@@ -680,10 +679,21 @@ struct GL_State {
     Hash_Map<Resource_ID, Shader_State> shaders;
     Hash_Map<Resource_ID, Layout_State> layouts;
 
+    Array<Resource_Handle> texture_slots;
+    Renderer_Setting_Flags setting_flags = RENDERER_SETTING_UNSET;
+    Blend_Equation blend_eq = BLEND_EQUATION_ADD;
+    Blend_Func_Factor src_col = BLEND_FACTOR_ONE;
+    Blend_Func_Factor dst_col = BLEND_FACTOR_ZERO;
+    Blend_Func_Factor src_alpha = BLEND_FACTOR_ONE;
+    Blend_Func_Factor dst_alpha = BLEND_FACTOR_ZERO;
+    Polygon_Face culled_face = POLY_FACE_BACK;
+    Polygon_Mode poly_mode_front = POLY_MODE_FILL;
+    Polygon_Mode poly_mode_back = POLY_MODE_FILL;
+    mz::irect viewport = { 0, 0, 1280, 720 };
 };
 
 void check_resource_handle(GL_State& state, Resource_Handle hnd) {
-    std::lock_guard lock(state.resource_meta_map_mutex);
+    std::lock_guard lock(state.internal_state_mutex);
 
     ST_ASSERT(hnd, "Null handle");
     ST_ASSERT(state.resource_meta_map.contains(*hnd), "Invalid resource handle");
@@ -697,7 +707,7 @@ void check_resource_handle_is(GL_State& state, Resource_Handle hnd, Resource_Typ
     ST_ASSERT(state.resource_meta_map[*hnd].type == expected_type, "Unexpected resource type");
 }
 
-GLuint create_shader(const engine::renderer::spec::create::Shader& spec, engine::New_String* error, Shader_State* ss) {
+GLuint create_shader(const engine::graphics::spec::create::Shader& spec, engine::New_String* error, Shader_State* ss) {
     GLint max_slots;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_slots);
 
@@ -943,7 +953,7 @@ void handle_creation(GL_State& state, Render_Command* header, void* data) {
     ST_DEBUG_ASSERT(rinfo.type  != RESOURCE_TYPE_UNSET,  "Resource type not correctly set in creation");
 
     *header->handle = rid;
-    std::lock_guard rlock(state.resource_meta_map_mutex);
+    std::lock_guard rlock(state.internal_state_mutex);
     state.resource_meta_map[rid] = rinfo;
     state.handle_map[rid] = header->handle;
 }
@@ -953,7 +963,7 @@ void handle_set(GL_State& state, Render_Command* header, void* data) {
     Resource_ID rid = *header->handle;
     Resource_Meta_Info rinfo;
     {
-        std::lock_guard l(state.resource_meta_map_mutex);
+        std::lock_guard l(state.internal_state_mutex);
 
         ST_ASSERT(state.resource_meta_map.contains(rid), "Invalid RID");
 
@@ -1031,10 +1041,73 @@ void handle_set(GL_State& state, Render_Command* header, void* data) {
         INTENTIONAL_CRASH("Unimplemented");
         break;
     }
+}
+void handle_append(GL_State& state, Render_Command* header, void* data) {
+    Resource_ID rid = *header->handle;
+    Resource_Meta_Info rinfo;
+    {
+        std::lock_guard l(state.internal_state_mutex);
+
+        ST_ASSERT(state.resource_meta_map.contains(rid), "Invalid RID");
+
+        rinfo = state.resource_meta_map[rid];
+
+    }
+    ST_ASSERT(rinfo.state != RESOURCE_STATE_ERROR && rinfo.state != RESOURCE_STATE_DEAD);
+    ST_ASSERT(rinfo.type == header->resource_type, "Resource type mismatch");
+
+    switch (header->resource_type)
+    {
+    case RESOURCE_TYPE_BUFFER:
+    {
+        auto& spec = *(spec::append::Buffer*)data;
+        void* sub_data = ((byte_t*)data) + sizeof(spec);
+        size_t sub_data_size = spec.data_size;
+        size_t offset = spec.offset;
+
+        ST_DEBUG_ASSERT(state.buffers.contains(rid), "Missing buffer for RID");
+        GL_ID buffer = to_gl_id(rid, RESOURCE_TYPE_BUFFER);
+        auto& buffer_data = state.buffers[rid];
+
+        ST_DEBUG_ASSERT((offset + sub_data_size) <= buffer_data.size);
+        
+        GL_ID buffer_type = to_gl_enum(buffer_data.buffer_type);
+
+        if (data) {
+            GLint last_bound;
+            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_bound);
+            glBindBuffer(buffer_type, buffer);
+            glBufferSubData(buffer_type, offset, sub_data_size, sub_data);
+            glBindBuffer(buffer_type, last_bound);
+        }
+
+        break;
+    }
+    case RESOURCE_TYPE_TEXTURE2D:
+    {
+        INTENTIONAL_CRASH("Cannot set data in RESOURCE_TYPE_BUFFER_LAYOUT");
+        break;
+    }
+    case RESOURCE_TYPE_BUFFER_LAYOUT:
+    {
+        
+        INTENTIONAL_CRASH("Cannot set data in RESOURCE_TYPE_BUFFER_LAYOUT");
+        break;
+    }
+    case RESOURCE_TYPE_SHADER:
+    {
+        INTENTIONAL_CRASH("Cannot set data in shader");
+
+        break;
+    }
+    default:
+        INTENTIONAL_CRASH("Unimplemented");
+        break;
+    }
     
 }
 
-void handle_message(GL_State& state, engine::renderer::Render_Command* header, void* data) {
+void handle_message(GL_State& state, engine::graphics::Render_Command* header, void* data) {
     switch (header->message)
     {
     case RENDER_MESSAGE_CLEAR:
@@ -1173,7 +1246,7 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         Resource_ID rid = *header->handle;
         Resource_Type type;
         {
-            std::lock_guard lock(state.resource_meta_map_mutex);
+            std::lock_guard lock(state.internal_state_mutex);
             ST_ASSERT(state.resource_meta_map[rid].state != RESOURCE_STATE_DEAD, "Resource is already destroyed");
             type = state.resource_meta_map[rid].type;
 
@@ -1205,7 +1278,7 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
             }
             case RESOURCE_TYPE_BUFFER_LAYOUT:
             {
-                glDeleteVertexArrays(1, &gid);
+                //glDeleteVertexArrays(1, &gid);
                 break;
             }
             default:
@@ -1230,6 +1303,12 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
             to_gl_enum(spec.dst_alpha_factor)
         );
 
+        state.blend_eq = spec.equation;
+        state.src_col = spec.src_color_factor;
+        state.dst_col = spec.dst_color_factor;
+        state.src_alpha = spec.src_alpha_factor;
+        state.dst_alpha = spec.dst_alpha_factor;
+
         break;
     }
     case RENDER_MESSAGE_SET_POLYGON_MODE:
@@ -1237,6 +1316,14 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
         const auto& spec = *(spec::submit::Set_Polygon_Mode*)data;
 
         glPolygonMode(to_gl_enum(spec.face), to_gl_enum(spec.mode));
+
+        state.culled_face = spec.face;
+
+        if (spec.face == POLY_FACE_FRONT) {
+            state.poly_mode_front = spec.mode;
+        } else {
+            state.poly_mode_back = spec.mode;
+        }
 
         break;
     }
@@ -1246,10 +1333,14 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
 
         for (u32 i = 1; i < RENDERER_SETTING_MAX; i <<= 1) {
             if (spec.settings & (Renderer_Setting_Flags)i) {
-                if (spec.enabled) glEnable (to_gl_enum((Renderer_Setting_Flags)i));
-                else              glDisable(to_gl_enum((Renderer_Setting_Flags)i)); 
+                if (spec.enabled) {
+                    glEnable (to_gl_enum((Renderer_Setting_Flags)i));
+                } else {
+                    glDisable(to_gl_enum((Renderer_Setting_Flags)i)); 
+                }
             }    
         }
+        
 
         break;
     }
@@ -1257,6 +1348,9 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
     {
         const auto& spec = *(spec::submit::Set_Viewport*)data;
         glViewport(spec.pos.x, spec.pos.y, spec.size.width, spec.size.height);
+
+        state.viewport = { spec.pos.x, spec.pos.y, spec.size.x, spec.size.y };
+
         break;
     }
     case RENDER_MESSAGE_SET_SCISSOR_BOX:
@@ -1267,7 +1361,7 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
     }
     case __INTERNAL_RENDER_MESSAGE_MAP_BUFFER:
     {   
-        const auto& spec = *(Render_Context::_Map_Command*)data;
+        const auto& spec = *(Graphics_Driver::_Map_Command*)data;
         check_resource_handle_is(state, spec.buffer_hnd, RESOURCE_TYPE_BUFFER);
 
         Resource_ID bufferid = *spec.buffer_hnd;
@@ -1295,7 +1389,7 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
     }
     case __INTERNAL_RENDER_MESSAGE_UNMAP_BUFFER:
     {
-        const auto& spec = *(Render_Context::_Unmap_Command*)data;
+        const auto& spec = *(Graphics_Driver::_Unmap_Command*)data;
         check_resource_handle_is(state, spec.buffer_hnd, RESOURCE_TYPE_BUFFER);
 
         Resource_ID bufferid = *spec.buffer_hnd;
@@ -1322,148 +1416,54 @@ void handle_message(GL_State& state, engine::renderer::Render_Command* header, v
 
 
 
-bool Render_Context::query(Query_Type type, _Query_Result* result) {
+bool Graphics_Driver::__internal_query(Query_Type type, _Query_Result* result) {
     if (!result) return false; 
 
     memset(result->ptr, 0, sizeof(result->ptr));
 
     bool ret = true;
+
+    auto&  gl_state = *(GL_State*)__internal;
+    std::lock_guard lock(gl_state.internal_state_mutex);
+
     
-    _current_target->_os_context->use([&]() {
+
+    if (type >= QUERY_TYPE_TEXTURE_SLOT && type < QUERY_TYPE_NEXT) {
+        gl_state.texture_slots[(size_t)type - (size_t)QUERY_TYPE_TEXTURE_SLOT];
+    } else {
         switch (type) {
-            case QUERY_TYPE_RENDERER_SETTINGS_FLAGS:
-            {
-                s32 flags = RENDERER_SETTING_UNSET;
-                
-                GLint value;
-                glGetIntegerv(GL_CULL_FACE, &value);
-                if (value) flags |= RENDERER_SETTING_CULLING;
 
-                glGetIntegerv(GL_DEPTH_TEST, &value);
-                if (value) flags |= RENDERER_SETTING_DEPTH_TESTING;
-
-                glGetIntegerv(GL_STENCIL_TEST, &value);
-                if (value) flags |= RENDERER_SETTING_STENCIL_TESTING;
-
-                glGetIntegerv(GL_PRIMITIVE_RESTART, &value);
-                if (value) flags |= RENDERER_SETTING_PRIMITIVE_RESTART;
-
-                glGetIntegerv(GL_SCISSOR_TEST, &value);
-                if (value) flags |= RENDERER_SETTING_SCISSOR_TESTING;
-
-                memcpy(result->ptr, &flags, sizeof(flags));
-                break;
-            }
-
-            case QUERY_TYPE_BLENDING_EQUATION:
-            {
-                GLint value;
-                glGetIntegerv(GL_BLEND_EQUATION_RGB, &value);
-                auto e = to_st_blend_equation(value);
-                memcpy(result->ptr, &e, sizeof(e));
-            }
-            case QUERY_TYPE_BLENDING_SRC_COLOR:
-            case QUERY_TYPE_BLENDING_DST_COLOR:
-            case QUERY_TYPE_BLENDING_SRC_ALPHA:
-            case QUERY_TYPE_BLENDING_DST_ALPHA:
-            {
-                GLint value = 0;
-                if (type == QUERY_TYPE_BLENDING_SRC_COLOR) {
-                    glGetIntegerv(GL_BLEND_SRC_RGB, &value);
-                } else if (type == QUERY_TYPE_BLENDING_DST_COLOR) {
-                    glGetIntegerv(GL_BLEND_DST_RGB, &value);
-                } else if (type == QUERY_TYPE_BLENDING_SRC_ALPHA) {
-                    glGetIntegerv(GL_BLEND_SRC_ALPHA, &value);
-                } else if (type == QUERY_TYPE_BLENDING_DST_ALPHA) {
-                    glGetIntegerv(GL_BLEND_DST_ALPHA, &value);
-                }
-                auto e = to_st_blend_factor(value);
-                memcpy(result->ptr, &e, sizeof(e));
-                break;
-            }
-
-            case QUERY_TYPE_POLY_FACE:
-            {
-                GLint face;
-                glGetIntegerv(GL_FRONT_FACE, &face);
-                auto e = to_st_poly_face(face);
-                memcpy(result->ptr, &e, sizeof(e));
-                break;
-            }
-
-            case QUERY_TYPE_POLY_MODE_FRONT:
-            {
-                GLint mode[2];
-                glGetIntegerv(GL_POLYGON_MODE, mode);
-
-                auto e = to_st_poly_mode(mode[0]);
-                memcpy(result->ptr, &e, sizeof(e));
-                break;
-            }
-            case QUERY_TYPE_POLY_MODE_BACK:
-            {
-                GLint mode[2];
-                glGetIntegerv(GL_POLYGON_MODE, mode);
-
-                auto e = to_st_poly_mode(mode[1]);
-                memcpy(result->ptr, &e, sizeof(e));
-                break;
-            }
-
-            case QUERY_TYPE_VIEWPORT:
-            {
-                GLint viewport[4];
-                glGetIntegerv(GL_VIEWPORT, viewport);
-                memcpy(result->ptr, viewport, sizeof(viewport));
-                break;
-            }
-
-            default:
-            {
-                if (type > QUERY_TYPE_TEXTURE_SLOT && type < QUERY_TYPE_NEXT) {
-                    GLint bound_texture;
-                    glGetIntegerv(GL_ACTIVE_TEXTURE, &bound_texture); 
-
-                    glActiveTexture(GL_TEXTURE0 + (type - QUERY_TYPE_TEXTURE_SLOT));
-
-                    GLint boundTexture;
-                    glGetIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
-
-                    glActiveTexture(bound_texture);
-
-                    Resource_ID rid = to_resource_id(bound_texture, RESOURCE_TYPE_TEXTURE2D);
-
-                    GL_State& state = *((GL_State*)__internal);
-
-                    if (!state.handle_map.contains(rid)) ret = false;
-
-                    auto texture_handle  = state.handle_map[rid];
-
-                    memcpy(result->ptr, &texture_handle, sizeof(texture_handle));
-                    break;
-                } else {
-                    ret = false; 
-                }
-            }
+            case QUERY_TYPE_RENDERER_SETTINGS_FLAGS: memcpy(result->ptr, &gl_state.setting_flags, sizeof(gl_state.setting_flags)); break;
+            case QUERY_TYPE_BLENDING_EQUATION: memcpy(result->ptr, &gl_state.blend_eq, sizeof(gl_state.blend_eq)); break;
+            case QUERY_TYPE_BLENDING_SRC_COLOR: memcpy(result->ptr, &gl_state.src_col, sizeof(gl_state.src_col)); break;
+            case QUERY_TYPE_BLENDING_DST_COLOR: memcpy(result->ptr, &gl_state.dst_col, sizeof(gl_state.dst_col)); break;
+            case QUERY_TYPE_BLENDING_SRC_ALPHA: memcpy(result->ptr, &gl_state.src_alpha, sizeof(gl_state.src_alpha)); break;
+            case QUERY_TYPE_BLENDING_DST_ALPHA: memcpy(result->ptr, &gl_state.dst_alpha, sizeof(gl_state.dst_alpha)); break;
+            case QUERY_TYPE_CULLED_FACE: memcpy(result->ptr, &gl_state.culled_face, sizeof(gl_state.culled_face)); break;
+            case QUERY_TYPE_POLY_MODE_FRONT: memcpy(result->ptr, &gl_state.poly_mode_front, sizeof(gl_state.poly_mode_front)); break;
+            case QUERY_TYPE_POLY_MODE_BACK: memcpy(result->ptr, &gl_state.poly_mode_back, sizeof(gl_state.poly_mode_back)); break;
+            case QUERY_TYPE_VIEWPORT: memcpy(result->ptr, &gl_state.viewport, sizeof(gl_state.viewport)); break;
+            default: INTENTIONAL_CRASH("Unhandled"); break;
         }
-    });
+    }
+
     return ret;
 }
 
-const Resource_Meta_Info& Render_Context::get_resource_meta(Resource_Handle hnd) const {
+const Resource_Meta_Info& Graphics_Driver::get_resource_meta(Resource_Handle hnd) const {
     ST_ASSERT(__internal, "Renderer not ready");
     ST_DEBUG_ASSERT(hnd);
 
     Resource_ID rid = *hnd;
     auto&  gl_state = *(GL_State*)__internal;
 
-    std::lock_guard lock(gl_state.resource_meta_map_mutex);
+    std::lock_guard lock(gl_state.internal_state_mutex);
     
     ST_DEBUG_ASSERT(gl_state.resource_meta_map.contains(rid), "Invalid resource ID");
 
     return gl_state.resource_meta_map[rid];
 }
-Resource_State Render_Context::get_resource_state(Resource_Handle hnd) const {
+Resource_State Graphics_Driver::get_resource_state(Resource_Handle hnd) const {
     ST_ASSERT(__internal, "Renderer not ready");
     ST_DEBUG_ASSERT(hnd);
 
@@ -1473,7 +1473,7 @@ Resource_State Render_Context::get_resource_state(Resource_Handle hnd) const {
     auto&  gl_state = *(GL_State*)__internal;
     bool contains = false;
     {
-        std::lock_guard lock(gl_state.resource_meta_map_mutex);
+        std::lock_guard lock(gl_state.internal_state_mutex);
         contains = gl_state.resource_meta_map.contains(*hnd);
     }
     if (contains) {
@@ -1483,9 +1483,7 @@ Resource_State Render_Context::get_resource_state(Resource_Handle hnd) const {
     return RESOURCE_STATE_BUSY; // Still waiting for creation
 }
 
-void Render_Context::__internal_init() {
-    
-    
+void Graphics_Driver::__internal_init() {
     {
         std::lock_guard gladlock(glad_init_mutex);
         if (!glad_initialized) {
@@ -1499,33 +1497,154 @@ void Render_Context::__internal_init() {
             glDebugMessageCallback( gl_debug_callback, 0 );
             log_info("Set up OpenGL Debug callback");
             #endif
+
+            os::clear_errors();
         }
     }
     
     __internal = ST_NEW(GL_State);
 
-    std::lock_guard lock(_env_mutex);
+    {
+        std::lock_guard lock(_env_mutex);
 
-    GLint major, minor;
-    glGetIntegerv(GL_MAJOR_VERSION, &major);
-    glGetIntegerv(GL_MINOR_VERSION, &minor);
+        GLint major, minor;
+        glGetIntegerv(GL_MAJOR_VERSION, &major);
+        glGetIntegerv(GL_MINOR_VERSION, &minor);
 
-    char* version = (char*)ST_MEM(16);
-    memset(version, 0, 16);
-    sprintf(version, "OpenGL %i.%i", major, minor);
-    
-    _env.version = version;
-    _env.version_major = major;
-    _env.version_minor = minor;
-    _env.vendor = (const char*)glGetString(GL_VENDOR);
-    _env.hardware = (const char*)glGetString(GL_RENDERER);
-    _env.driver = (const char*)glGetString(GL_VERSION);
-    _env.shading_version = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
+        char* version = (char*)ST_MEM(16);
+        memset(version, 0, 16);
+        sprintf(version, "OpenGL %i.%i", major, minor);
+        
+        _env.version = version;
+        _env.version_major = major;
+        _env.version_minor = minor;
+        _env.vendor = (const char*)glGetString(GL_VENDOR);
+        _env.hardware = (const char*)glGetString(GL_RENDERER);
+        _env.driver = (const char*)glGetString(GL_VERSION);
+        _env.shading_version = (const char*)glGetString(GL_SHADING_LANGUAGE_VERSION);
+
+        GLint max_slots;
+        glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_slots);
+        _env.max_texture_slots = max_slots;
+    }
+
+    auto& gl_state = *(GL_State*)__internal;
+
+    {
+        std::lock_guard l(gl_state.internal_state_mutex);
+
+        gl_state.texture_slots.resize(_env.max_texture_slots, 0);
+        for (auto& slot : gl_state.texture_slots) {
+            slot = 0;
+        }
+    }
 }
 
-void Render_Context::__internal_handle_command(Render_Command* header, void* data) {
+void Graphics_Driver::__internal_on_context_change() {
+    auto& gl_state = *(GL_State*)__internal;
+
+    std::lock_guard l(gl_state.internal_state_mutex);
+
+    for (size_t i = 0; i < gl_state.texture_slots.size(); i++) {
+        auto htexture = gl_state.texture_slots[i];
+        if (htexture && gl_state.texture2ds.contains(*htexture)) {
+            auto rid = *htexture;
+
+            glActiveTexture(GL_TEXTURE0 + (GLenum)i);
+            glBindTexture(GL_TEXTURE_2D, to_gl_id(rid, RESOURCE_TYPE_TEXTURE2D));
+        }
+    }
+
+
+
+    for (u32 i = 1; i < RENDERER_SETTING_MAX; i <<= 1) {
+        if (gl_state.setting_flags & (Renderer_Setting_Flags)i) {
+            glEnable (to_gl_enum((Renderer_Setting_Flags)i));
+        } else {
+            glDisable (to_gl_enum((Renderer_Setting_Flags)i));
+        } 
+    }
+
+    glEnable(GL_BLEND);
+    glBlendEquation(to_gl_enum(gl_state.blend_eq));
+    glBlendFuncSeparate(
+        to_gl_enum(gl_state.src_col), 
+        to_gl_enum(gl_state.dst_col), 
+        to_gl_enum(gl_state.src_alpha), 
+        to_gl_enum(gl_state.dst_alpha)
+    );
+
+    glPolygonMode(to_gl_enum(gl_state.culled_face), gl_state.culled_face == POLY_FACE_FRONT ? to_gl_enum(gl_state.poly_mode_front) : to_gl_enum(gl_state.poly_mode_back));
+
+    auto& vp = gl_state.viewport;
+    glViewport(vp.x, vp.y, vp.z, vp.w);
+}
+
+void Graphics_Driver::__internal_on_command_send(Render_Command* header, const void* data) {
     auto& state = *(GL_State*)__internal;
-    
+
+    std::lock_guard l(state.internal_state_mutex);
+
+    switch (header->type)
+    {
+        case RENDER_COMMAND_TYPE_SUBMIT:
+        {
+            if (header->message == RENDER_MESSAGE_BIND_TEXTURE2D) {
+                const auto& spec = *(spec::submit::Bind_Texture2D*)data;
+                state.texture_slots[spec.slot] = spec.hnd_texture;
+                break;
+            } else if (header->message == RENDER_MESSAGE_TOGGLE) {
+                const auto& spec = *(spec::submit::Toggle*)data;
+
+                for (u32 i = 1; i < RENDERER_SETTING_MAX; i <<= 1) {
+                    if (spec.settings & (Renderer_Setting_Flags)i) {
+                        if (spec.enabled) {
+                            state.setting_flags |= (Renderer_Setting_Flags)i; 
+                        } else {
+                            state.setting_flags = (Renderer_Setting_Flags)(((s32)state.setting_flags) & ~((s32)i));
+                        }
+                    }    
+                }
+                break;
+            } else if (header->message == RENDER_MESSAGE_SET_BLENDING) {
+                const auto& spec = *(spec::submit::Set_Blending*)data;
+
+                state.blend_eq = spec.equation;
+                state.src_col = spec.src_color_factor;
+                state.dst_col = spec.dst_color_factor;
+                state.src_alpha = spec.src_alpha_factor;
+                state.dst_alpha = spec.dst_alpha_factor;
+
+                break;
+            } else if (header->message == RENDER_MESSAGE_SET_POLYGON_MODE) {
+                const auto& spec = *(spec::submit::Set_Polygon_Mode*)data;
+                state.culled_face = spec.face;
+
+                if (spec.face == POLY_FACE_FRONT) {
+                    state.poly_mode_front = spec.mode;
+                } else {
+                    state.poly_mode_back = spec.mode;
+                }
+
+                break;
+
+            } else if (header->message == RENDER_MESSAGE_SET_VIEWPORT) {
+                const auto& spec = *(spec::submit::Set_Viewport*)data;
+                state.viewport = { spec.pos.x, spec.pos.y, spec.size.x, spec.size.y };
+                break;
+            }
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+}
+
+void Graphics_Driver::__internal_handle_command(Render_Command* header, void* data) {
+    auto& state = *(GL_State*)__internal;
+
     switch (header->type)
     {
         case RENDER_COMMAND_TYPE_CREATE:
@@ -1537,13 +1656,16 @@ void Render_Context::__internal_handle_command(Render_Command* header, void* dat
         case RENDER_COMMAND_TYPE_SET:
             handle_set(state, header ,data);
             break;
+        case RENDER_COMMAND_TYPE_APPEND:
+            handle_append(state, header ,data);
+            break;
         default:
             ST_ASSERT(false);
             break;
     }
 }
 
-/*void Render_Context::__internal_render() {
+/*void Graphics_Driver::__internal_render() {
     auto& state = *(GL_State*)__internal;
 
     _render_thread.traverse_commands<Render_Command>([&](Render_Command* header, void* data) {
@@ -1568,11 +1690,11 @@ void Render_Context::__internal_handle_command(Render_Command* header, void* dat
 
     
 }*/
-void Render_Context::__internal_shutdown() {
+void Graphics_Driver::__internal_shutdown() {
     ST_DELETE((GL_State*)__internal);
 
     ST_FREE((char*)_env.version, 16);
 }
 
-NS_END(renderer);
+NS_END(graphics);
 NS_END(engine);

@@ -114,7 +114,7 @@ Double_Buffered_Thread::Double_Buffered_Thread(size_t buffer_sizes, const Double
     _thread_function(thread_fn), 
     _readbuffer(allocate_buffer(buffer_sizes)), 
     _writebuffer_allocator(allocate_buffer(buffer_sizes), buffer_sizes) {
-    _thread = std::thread(thread_fn, &_buffer_mutex);
+    _thread = std::thread(thread_fn, &_read_mutex);
 }
 Double_Buffered_Thread::~Double_Buffered_Thread() {
     if (_running) this->stop();
@@ -142,7 +142,7 @@ void Double_Buffered_Thread::send(void* command, const void* data, size_t data_s
     // Need to refactor a little bit so window->swap_buffers
     // isn't called for every command buffer (change up naming...)
     ST_ASSERT(_writebuffer_allocator._next + total_size <= _writebuffer_allocator._tail, "Command buffer overflow. Please allocate more.\nFree: {}kb/{}kb\nRequested: {}kb", (_buffer_size - (_writebuffer_allocator._tail - _writebuffer_allocator._next)) * 1000.0, _buffer_size * 1000.0, total_size * 1000.0);
-    std::lock_guard lock(_buffer_mutex);
+    std::lock_guard lock(_write_mutex);
     byte_t* command_buffer = (byte_t*)_writebuffer_allocator.allocate(total_size);
     memcpy(command_buffer, command, _command_size);
 
@@ -150,8 +150,14 @@ void Double_Buffered_Thread::send(void* command, const void* data, size_t data_s
     if(data && data_size) memcpy(command_buffer + _command_size, data, data_size);
 }
 
+void* Double_Buffered_Thread::allocate_command(size_t command_size) {
+    std::lock_guard lock(_write_mutex);
+    return _writebuffer_allocator.allocate(command_size);
+}
+
 void Double_Buffered_Thread::swap() {
-    std::unique_lock lock(_buffer_mutex);
+    std::lock_guard write_lock(_write_mutex);
+    std::unique_lock lock(_read_mutex);
 
     _swap_condition.wait(lock, [&]() { return _buffer_state == COMMAND_BUFFER_STATE_OLD; });
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Engine/memory.h"
-
 #include "Engine/logger.h"
 
 NS_BEGIN(engine);
@@ -39,6 +38,13 @@ struct Forbidden_Array {
 
 	constexpr Forbidden_Array() {
         this->reserve(1);
+    }
+    constexpr Forbidden_Array(std::initializer_list<type_t> items) {
+        this->reserve(items.size());
+
+        for (auto& item : items) {
+            this->push_back(item);
+        }
     }
 
 	constexpr explicit Forbidden_Array(size_t n) {
@@ -161,11 +167,13 @@ struct Forbidden_Array {
         if (n == previous_num) return;
         reserve(n);
 
-        size_t diff = n - previous_num;
+        if (n > previous_num) {
+            size_t diff = n - previous_num;
 
-        for (size_t i = 0; i < diff; i++) {
-            //*(((type_t*)_next) + i) = val;
-            memcpy(_end + i * type_size, &val, type_size);
+            for (size_t i = 0; i < diff; i++) {
+                //*(((type_t*)_next) + i) = val;
+                memcpy(_end + i * type_size, &val, type_size);
+            }
         }
 
         _end = _buffer_head + n * type_size;
@@ -289,7 +297,8 @@ struct Forbidden_Array {
     }
 
 	constexpr const type_t& at(size_t n) const {
-        return this->at(n);
+        ST_DEBUG_ASSERT(n >= 0 && n < this->size(), "Index out of bounds");
+        return *(type_t*)(_buffer_head + n * type_size);
     }
 
 	constexpr type_t& operator[](size_t n) {
@@ -297,7 +306,7 @@ struct Forbidden_Array {
     }
 
 	constexpr const type_t& operator[](size_t n) const {
-        return (*this)[n];
+        return this->at(n);
     }
 
 	constexpr type_t& front() {
@@ -311,7 +320,7 @@ struct Forbidden_Array {
 	constexpr const type_t& back() const { return this->back(); }
 
 	constexpr type_t* data() { return (type_t*)_buffer_head; }
-	constexpr const type_t* data() const { return this->data(); }
+	constexpr const type_t* data() const { return (type_t*)_buffer_head; }
 };
 
 template <typename T>
@@ -400,4 +409,89 @@ using Deque = std::deque<T, Global_Allocator::STL_Global_Allocator<T>>;
 template <typename T>
 using Stack = std::stack<T, std::deque<T, Global_Allocator::STL_Global_Allocator<T>>>;
 
+
+struct ST_API Bitset {
+    Array<byte_t> bytes;
+
+    Bitset(u16 hint_bits = 64) {
+        bytes.resize((hint_bits + 7) / 8); 
+    }
+
+    bool operator ==(const Bitset& other) const {
+        
+        if (bytes.size() == 1 && other.bytes.size() == 1)
+            return bytes[0] == other.bytes[0];
+        else if (bytes.size() == 2 && other.bytes.size() == 2)
+            return *(u16*)bytes.data() == *(u16*)other.bytes.data();
+        else if (bytes.size() == 3 && other.bytes.size() == 3)
+            return *(u16*)bytes.data() == *(u16*)other.bytes.data() &&
+                bytes[2] == other.bytes[2];
+        else if (bytes.size() == 4 && other.bytes.size() == 4)
+            return *(u32*)bytes.data() == *(u32*)other.bytes.data();
+        else if (bytes.size() == 5 && other.bytes.size() == 5)
+            return *(u32*)bytes.data() == *(u32*)other.bytes.data() &&
+                bytes[4] == other.bytes[4];
+        else if (bytes.size() == 6 && other.bytes.size() == 6)
+            return *(u32*)bytes.data() == *(u32*)other.bytes.data() &&
+                *(u16*)(bytes.data() + 4) == *(u16*)(other.bytes.data() + 4);
+        else if (bytes.size() == 7 && other.bytes.size() == 7)
+            return *(u32*)bytes.data() == *(u32*)other.bytes.data() &&
+                *(u16*)(bytes.data() + 4) == *(u16*)(other.bytes.data() + 4) &&
+                bytes[6] == other.bytes[6];
+        else if (bytes.size() == 8 && other.bytes.size() == 8)
+            return *(u64*)bytes.data() == *(u64*)other.bytes.data();
+
+        size_t min_size = std::min(bytes.size(), other.bytes.size());
+        if (memcmp(bytes.data(), other.bytes.data(), min_size) != 0) {
+            return false;
+        }
+
+        if (bytes.size() == other.bytes.size()) {
+            return true;
+        }
+
+        const Array<byte_t>& larger_array = bytes.size() > other.bytes.size() ? bytes : other.bytes;
+
+        for (size_t i = min_size; i < larger_array.size(); ++i) {
+            if (larger_array[i] != 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool operator != (const Bitset& other) {
+        return !(*this == other); 
+    }
+
+    void set(u16 bit) {
+        if (bytes.size() * 8 <= bit) {
+            bytes.resize(bit / 8 + 1); 
+        }
+
+        u16 nbyte = bit / 8;
+        u16 nbit = bit % 8; 
+
+        bytes[nbyte] |= (1 << nbit);
+    }
+
+    void unset(u16 bit) {
+        if (bit / 8 >= bytes.size()) return;
+
+        u16 nbyte = bit / 8;
+        u16 nbit = bit % 8; 
+
+        bytes[nbyte] &= ~(1 << nbit);
+    }
+
+    bool get(u16 bit) const {
+        if (bit / 8 >= bytes.size()) return false;
+
+        u16 nbyte = bit / 8;
+        u16 nbit = bit % 8; 
+
+        return bytes[nbyte] & (1 << nbit);
+    }
+};
 NS_END(engine);

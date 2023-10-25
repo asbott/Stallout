@@ -6,6 +6,7 @@
 #include "Engine/logger.h"
 
 #include <Windows.h>
+#include "os/windows/winutils.h"
 
 #include <assert.h>
 
@@ -36,7 +37,7 @@ Cache_Size get_cache_size() {
     assert(result == TRUE || lastError == ERROR_INSUFFICIENT_BUFFER && "Failed to query buffer size for GetLogicalProcessorInformation");
 
     std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
-    result = GetLogicalProcessorInformation(&buffer[0], &bufferSize);
+    result = WIN32_CALL(GetLogicalProcessorInformation(&buffer[0], &bufferSize));
     assert(result == TRUE && "Failed to get processor information");
 
     Cache_Size cs{};
@@ -74,11 +75,11 @@ void get_monitors(Monitor*& monitors, size_t* num_monitors) {
     Monitors_Param p { monitors, num_monitors, 0 };
     *p.num_monitors = 0;
 
-    ::EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR, HDC, LPRECT, LPARAM param) {(*(((Monitors_Param*)param)->num_monitors))++; return TRUE; }, (LPARAM)&p);
+    WIN32_CALL(::EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR, HDC, LPRECT, LPARAM param) {(*(((Monitors_Param*)param)->num_monitors))++; return TRUE; }, (LPARAM)&p));
 
     monitors = (Monitor*)ST_MEM(sizeof(Monitor) * *num_monitors);
 
-    ::EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM p) {
+    WIN32_CALL(::EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM p) {
         auto param = (Monitors_Param*)p;
         MONITORINFO info = {};
         info.cbSize = sizeof(MONITORINFO);
@@ -101,7 +102,7 @@ void get_monitors(Monitor*& monitors, size_t* num_monitors) {
         m.handle = monitor;
 
         return TRUE;
-    }, (LPARAM)&p);
+    }, (LPARAM)&p));
 }
 
 typedef enum { PROCESS_DPI_UNAWARE = 0, PROCESS_SYSTEM_DPI_AWARE = 1, PROCESS_PER_MONITOR_DPI_AWARE = 2 } PROCESS_DPI_AWARENESS;
@@ -110,11 +111,11 @@ typedef enum { MDT_EFFECTIVE_DPI = 0, MDT_ANGULAR_DPI = 1, MDT_RAW_DPI = 2, MDT_
 typedef HRESULT(WINAPI* PFN_GetDpiForMonitor)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*); 
 float get_monitor_dpi(void* monitor) {
     UINT xdpi = 96, ydpi = 96;
-    static HINSTANCE shcore_dll = ::LoadLibraryA("shcore.dll"); // Reference counted per-process
+    static HINSTANCE shcore_dll = WIN32_CALL(::LoadLibraryA("shcore.dll"));
     static PFN_GetDpiForMonitor GetDpiForMonitorFn = nullptr;
     
     if (GetDpiForMonitorFn == nullptr && shcore_dll != nullptr) {
-        GetDpiForMonitorFn = (PFN_GetDpiForMonitor)::GetProcAddress(shcore_dll, "GetDpiForMonitor");
+        GetDpiForMonitorFn = (PFN_GetDpiForMonitor)WIN32_CALL(::GetProcAddress(shcore_dll, "GetDpiForMonitor"));
     }
     
     if (GetDpiForMonitorFn != nullptr) {
@@ -123,14 +124,15 @@ float get_monitor_dpi(void* monitor) {
             assert(xdpi == ydpi);
             return xdpi / 96.0f;
         }
+        win32::clear_error();
     }
     
 #ifndef NOGDI
-    const HDC dc = ::GetDC(nullptr);
+    const HDC dc = WIN32_CALL(::GetDC(nullptr));
     if (dc != nullptr) {
-        xdpi = ::GetDeviceCaps(dc, LOGPIXELSX);
-        ydpi = ::GetDeviceCaps(dc, LOGPIXELSY);
-        ::ReleaseDC(nullptr, dc);
+        xdpi = WIN32_CALL(::GetDeviceCaps(dc, LOGPIXELSX));
+        ydpi = WIN32_CALL(::GetDeviceCaps(dc, LOGPIXELSY));
+        WIN32_CALL(::ReleaseDC(nullptr, dc));
         assert(xdpi == ydpi); 
         return xdpi / 96.0f;
     }
@@ -141,26 +143,26 @@ float get_monitor_dpi(void* monitor) {
 }
 
 void set_mouse_cursor(Mouse_Cursor cursor) {
-    SetCursor(LoadCursor(NULL, to_win32_enum(cursor)));
+    WIN32_CALL(SetCursor(WIN32_CALL(LoadCursor(NULL, to_win32_enum(cursor)))));
 }
 
 bool is_app_focused() {
-    HWND hWnd = GetForegroundWindow();
+    HWND hWnd = WIN32_CALL(GetForegroundWindow());
     if (!hWnd) {
         return false; 
     }
 
     DWORD focusedWindowProcessId;
-    GetWindowThreadProcessId(hWnd, &focusedWindowProcessId);
+    WIN32_CALL(GetWindowThreadProcessId(hWnd, &focusedWindowProcessId));
 
-    DWORD currentProcessId = GetCurrentProcessId();
+    DWORD currentProcessId = WIN32_CALL(GetCurrentProcessId());
 
     return focusedWindowProcessId == currentProcessId;
 }
 
 void set_cursor_pos(s32 x, s32 y) {
     POINT pos = { x, y };
-    SetCursorPos(pos.x, pos.y);
+    WIN32_CALL(SetCursorPos(pos.x, pos.y));
 }
 
 NS_END(env);

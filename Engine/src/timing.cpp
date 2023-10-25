@@ -1,9 +1,18 @@
 #include "pch.h"
 
+#include "os/io.h"
+
 #include "timing.h"
+
+#include "threads.h"
 
 #include <sstream>
 #include <string>
+
+std::ofstream outstream;
+std::mutex stream_mutex;
+
+bool live = false;
 
 NS_BEGIN(engine)
 std::chrono::high_resolution_clock::time_point now() {
@@ -49,4 +58,52 @@ std::ostream& operator<<(std::ostream& os, const Timer& timer) {
     os << timer.record().get_milliseconds() << "ms";
     return os;
 }
-NS_END(engine)
+
+void open_time_profiler(const char* filepath) {
+    ST_ASSERT(!live, "Profiler already live");
+    std::lock_guard lock(stream_mutex);
+    outstream.open(filepath);
+    outstream << "[";
+    outstream.close();
+    outstream.open(filepath, std::ios::app);
+
+    live = outstream.is_open();
+}
+void close_time_profiler() {
+    std::lock_guard lock(stream_mutex);
+    outstream << "{}]"; 
+    outstream.flush();
+    outstream.close();
+
+    live = false;
+}
+
+Scoped_Time_Recorder::Scoped_Time_Recorder(const char* name)
+    : name(name) {
+    timer.reset();
+    start = std::chrono::duration_cast<std::chrono::microseconds>(timer._start.time_since_epoch()).count();
+}
+
+Scoped_Time_Recorder::~Scoped_Time_Recorder() {
+    if (!live) return;
+
+    auto duration = timer.record();
+
+    // Not pretty but 0 heap allocations and very fast
+    static const char fmt[] = "{\"cat\":\"function\",\"dur\":%.3f,\"name\":\"%s\",\"ph\":\"X\",\"pid\":0,\"tid\":%zu,\"ts\":%lld},";
+    thread_local static char entry[sizeof(fmt) + 256];
+
+    int written = snprintf(entry, sizeof(entry),
+                           fmt,
+                           static_cast<double>(duration.get_microseconds()),
+                           name,
+                           std::hash<std::thread::id>()(std::this_thread::get_id()),
+                           start);
+
+    if (written > 0 && written < sizeof(entry)) {
+        std::lock_guard lock(stream_mutex);
+        outstream.write(entry, written);
+    }
+}
+
+NS_END(engine);

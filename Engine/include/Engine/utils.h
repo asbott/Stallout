@@ -61,7 +61,8 @@ struct Double_Buffered_Thread {
     thread_fn_t _thread_function;
     byte_t* _readbuffer; // Buffer to be read on separate thread
     Linear_Allocator  _writebuffer_allocator; // Buffer to be written to by caller thread
-    std::mutex _buffer_mutex;
+    std::mutex _read_mutex;
+    std::mutex _write_mutex;
     const size_t _buffer_size;
     std::atomic_uint64_t _buffer_usage = 0;
     size_t _command_size = 0;
@@ -84,6 +85,8 @@ struct Double_Buffered_Thread {
 
     void send(void* command, const void* data, size_t data_size);
 
+    void* allocate_command(size_t command_size);
+
     void swap();
 
 
@@ -95,13 +98,13 @@ struct Double_Buffered_Thread {
     // Stream  command and move pointer to next command
     template <typename type_t>
     void traverse_commands(const std::function<size_t(type_t*, void*)>& callback) {
-        ST_ASSERT(sizeof(type_t) == _command_size);
+        ST_DEBUG_ASSERT(sizeof(type_t) == _command_size);
         size_t offset = 0;
         for (byte_t* next = _readbuffer; next < _readbuffer + _buffer_usage; next += offset) {
             void* data = next + _command_size;
             offset = callback((type_t*)next, data);
-
-            ST_ASSERT(offset, "traverse_commands() must return offset to next command (sizeof command + sizeof data)");
+            
+            ST_DEBUG_ASSERT(offset, "traverse_commands() must return offset to next command (sizeof command + sizeof data)");
         }
     };
 };

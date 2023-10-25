@@ -16,31 +16,6 @@
 	#define _AP_BREAK signal(SIGTRAP)
 #endif
 
-#ifndef _ST_DISABLE_ASSERTS
-
-	#define ST_ASSERT(expr, ...) \
-    if (!(expr)) { \
-        log_critical("Assertion failed for expression '" #expr "'\nMessage:\n" __VA_ARGS__); _AP_BREAK; \
-    }
-
-	#ifdef _ST_CONFIG_DEBUG
-		#define ST_DEBUG_ASSERT(expr, ...) \
-		if (!(expr)) { \
-			log_critical("Assertion failed for expression '" #expr "'\nMessage:\n" __VA_ARGS__); _AP_BREAK; \
-		}
-	#else
-		#define ST_DEBUG_ASSERT(expr, ...)
-	#endif
-
-#else
-
-	#define ST_ASSERT(expr, ...) (void)(expr)
-	#define ST_DEBUG_ASSERT(expr, ...)
-
-#endif
-
-#define INTENTIONAL_CRASH(fmt, ...) ST_ASSERT(false, "App intentionally crashed.\nReason: " fmt, __VA_ARGS__)
-
 #define BIT1  1
 #define BIT2  2
 #define BIT3  4
@@ -74,7 +49,8 @@
 #define BIT31 1073741824
 #define BIT32 2147483648
 
-#define BIT(n) (1 << n)
+#define BIT(n) (1 << (n-1))
+#define BIT64(n) (1ULL << (n-1))
 
 #ifdef _MSC_VER
 	#define _st_force_inline __forceinline
@@ -153,8 +129,6 @@ inline const char* __strip_func_sig_ns(const char* func) {
 #endif
 
 #define st_offsetof(st, m) ((size_t)(&((st *)0)->m))
-
-
 
 #define ALIGN(n, a) (((n) + ((a) - 1)) & ~((a) - 1))
 

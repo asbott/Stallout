@@ -2,8 +2,14 @@
 
 #include "mz_vector.hpp"
 
+NS_BEGIN(os);
+NS_BEGIN(graphics);
+struct Device_Context;
+NS_END(graphics);
+NS_END(os);
+
 NS_BEGIN(engine);
-NS_BEGIN(renderer);
+NS_BEGIN(graphics);
 
 // Whenever this type is used it means its the actual
 // value of the address of Resource_Handle. To be used
@@ -22,7 +28,7 @@ enum Render_Command_Type : u8 {
     RENDER_COMMAND_TYPE_CREATE,
     RENDER_COMMAND_TYPE_SUBMIT,
     RENDER_COMMAND_TYPE_SET,
-    RENDER_COMMAND_TYPE_WINDOW_CALL
+    RENDER_COMMAND_TYPE_APPEND,
 };
 enum Render_Message : u32 {
     RENDER_MESSAGE_CLEAR,
@@ -41,6 +47,41 @@ enum Render_Message : u32 {
     __INTERNAL_RENDER_MESSAGE_MAP_BUFFER,
     __INTERNAL_RENDER_MESSAGE_UNMAP_BUFFER
 };
+inline const char* render_message_to_string(Render_Message msg) {
+    switch (msg) {
+        case RENDER_MESSAGE_CLEAR: 
+            return "RENDER_MESSAGE_CLEAR";
+        case RENDER_MESSAGE_SET_CLEAR_COLOR: 
+            return "RENDER_MESSAGE_SET_CLEAR_COLOR";
+        case RENDER_MESSAGE_BIND_SHADER_UNIFORM_BUFFER: 
+            return "RENDER_MESSAGE_BIND_SHADER_UNIFORM_BUFFER";
+        case RENDER_MESSAGE_BIND_TEXTURE2D: 
+            return "RENDER_MESSAGE_BIND_TEXTURE2D";
+        case RENDER_MESSAGE_DRAW_INDEXED: 
+            return "RENDER_MESSAGE_DRAW_INDEXED";
+        case RENDER_MESSAGE_DESTROY: 
+            return "RENDER_MESSAGE_DESTROY";
+        case RENDER_MESSAGE_SET_BLENDING: 
+            return "RENDER_MESSAGE_SET_BLENDING";
+        case RENDER_MESSAGE_TOGGLE: 
+            return "RENDER_MESSAGE_TOGGLE";
+        case RENDER_MESSAGE_SET_POLYGON_MODE: 
+            return "RENDER_MESSAGE_SET_POLYGON_MODE";
+        case RENDER_MESSAGE_SET_VIEWPORT: 
+            return "RENDER_MESSAGE_SET_VIEWPORT";
+        case RENDER_MESSAGE_SET_SCISSOR_BOX: 
+            return "RENDER_MESSAGE_SET_SCISSOR_BOX";
+        case RENDER_MESSAGE_SET_TARGET: 
+            return "RENDER_MESSAGE_SET_TARGET";
+        case __INTERNAL_RENDER_MESSAGE_MAP_BUFFER: 
+            return "__INTERNAL_RENDER_MESSAGE_MAP_BUFFER";
+        case __INTERNAL_RENDER_MESSAGE_UNMAP_BUFFER: 
+            return "__INTERNAL_RENDER_MESSAGE_UNMAP_BUFFER";
+        default: 
+            INTENTIONAL_CRASH("Unhandled enum");
+            return nullptr; 
+    }
+}
 enum Resource_Type : u16 {
     RESOURCE_TYPE_TEXTURE2D,
     RESOURCE_TYPE_RENDERTARGET,
@@ -52,6 +93,27 @@ enum Resource_Type : u16 {
 
     RESOURCE_TYPE_UNSET
 };
+inline const char* resource_type_to_string(Resource_Type type) {
+    switch (type) {
+        case RESOURCE_TYPE_TEXTURE2D: 
+            return "RESOURCE_TYPE_TEXTURE2D";
+        case RESOURCE_TYPE_RENDERTARGET: 
+            return "RESOURCE_TYPE_RENDERTARGET";
+        case RESOURCE_TYPE_SHADER: 
+            return "RESOURCE_TYPE_SHADER";
+        case RESOURCE_TYPE_BUFFER: 
+            return "RESOURCE_TYPE_BUFFER";
+        case RESOURCE_TYPE_BUFFER_LAYOUT: 
+            return "RESOURCE_TYPE_BUFFER_LAYOUT";
+        case RESOURCE_TYPE_COUNT: 
+            return "RESOURCE_TYPE_COUNT";
+        case RESOURCE_TYPE_UNSET: 
+            return "RESOURCE_TYPE_UNSET";
+        default: 
+            INTENTIONAL_CRASH("Unhandled enum");
+            return nullptr;
+    }
+}
 
 enum Resource_State : u16 {
     RESOURCE_STATE_BUSY,
@@ -129,11 +191,6 @@ enum Texture2D_Format {
     TEXTURE2D_FORMAT_BGR_INTEGER,
     TEXTURE2D_FORMAT_RGBA_INTEGER,
     TEXTURE2D_FORMAT_BGRA_INTEGER,
-};
-struct Render_Window;
-struct Window_Call {
-    std::function<void(os::Window*)>* fn; // Needs to be dynamically allocated
-    Render_Window* caller;
 };
 
 struct Buffer_Layout_Entry {
@@ -235,7 +292,7 @@ enum Query_Type : s32 {
     QUERY_TYPE_BLENDING_DST_COLOR,
     QUERY_TYPE_BLENDING_SRC_ALPHA,
     QUERY_TYPE_BLENDING_DST_ALPHA,
-    QUERY_TYPE_POLY_FACE,
+    QUERY_TYPE_CULLED_FACE,
     QUERY_TYPE_POLY_MODE_FRONT,
     QUERY_TYPE_POLY_MODE_BACK,
     QUERY_TYPE_VIEWPORT,
@@ -255,7 +312,6 @@ enum Polygon_Mode {
     POLY_MODE_LINE,
     POLY_MODE_POINT,
 };
-struct Render_Window;
 
 
 
@@ -354,8 +410,7 @@ struct Set_Scissor_Box {
 
 
 struct Set_Target {
-    // TODO: Render buffers
-    Render_Window* target;
+    os::graphics::Device_Context* target = NULL;
     static const Render_Message message = RENDER_MESSAGE_SET_TARGET;
 };
 
@@ -411,7 +466,25 @@ struct Texture2D {
 }; 
 
 NS_END(create);
+
+NS_BEGIN(append);
+
+struct Buffer {
+    size_t offset;
+    size_t data_size;
+
+    static const Resource_Type type = RESOURCE_TYPE_BUFFER;
+};
+
+struct Texture2D {
+    u32 x, y;
+};
+
+NS_END(append);
+
+
 NS_END(spec);
+
 
 struct Render_Command {
     Render_Command_Type type;
@@ -426,5 +499,5 @@ struct Render_Command {
     size_t size;
 };
 
-NS_END(renderer);
+NS_END(graphics);
 NS_END(engine);

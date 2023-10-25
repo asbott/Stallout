@@ -4,7 +4,11 @@
 
 
 
-NS_BEGIN(os)
+NS_BEGIN(os);
+
+NS_BEGIN(graphics);
+struct Device_Context;
+NS_END(graphics);
 
 // Custom keycodes, converted in backend inplementations
 // Keys AND mouse buttons
@@ -327,14 +331,14 @@ u64 to_os_input_code(Input_Code code); // Implemented in backend
 
 
 struct Window_Init_Spec {
-    s32 x = 100, y = 100;
+    s32 x = 0, y = 0;
     size_t width = 1920;
     size_t height = 1080;
     bool fullscreen = false;
     const char* title = "Stallout";
     bool visible = true;
 
-    bool size_includes_styles = false;
+    bool size_includes_styles = true;
 
 
     Window_Style style = WINDOW_STYLE_CAPTION | WINDOW_STYLE_SYSMENU | WINDOW_STYLE_MINIMIZEBOX;
@@ -343,12 +347,15 @@ struct Window_Init_Spec {
 
 struct Window;
 
-typedef std::function<void(Window*, Window_Event_Type, void* param, void* userdata)> window_event_callback_t;
+typedef std::function<bool(Window*, Window_Event_Type, void* param, void* userdata)> window_event_callback_t;
+
+
+
 
 // TODO: #testing #threading
 // Const functions are meant to be thread-safe
 // but this is not tested
-struct Window {
+struct ST_API Window {
 
     struct _Event {
         Window_Event_Type etype;
@@ -358,7 +365,7 @@ struct Window {
     Window(const Window_Init_Spec& wnd_spec, Window* parent = NULL);
     ~Window();
 
-    void set_event_callback(window_event_callback_t, void* userdata = NULL);    
+    void add_event_callback(window_event_callback_t, void* userdata = NULL);    
 
     void set_size(s32 width, s32 height);
     bool get_size(s32* width, s32* height) const;
@@ -382,6 +389,7 @@ struct Window {
     bool is_minimized() const;
     bool is_hovered() const;
     void* get_monitor() const; 
+    graphics::Device_Context* get_device_context() const;
 
     bool screen_to_client(s32* x, s32* y) const;
     bool client_to_screen(s32* x, s32* y) const;
@@ -390,12 +398,12 @@ struct Window {
     void capture_mouse();
     void release_mouse();    
 
-    void _on_event(Window_Event_Type etype, void* param);
+    bool dispatch_event(Window_Event_Type etype, void* param);
 
     void poll_events();
     void swap_buffers();
 
-    struct Input {
+    struct ST_API Input {
         Input_State get_state(Input_Code code) const;
 
         double _mouse_x = 0;
@@ -405,6 +413,7 @@ struct Window {
     } input;
 
     void* _os_handle;
+    graphics::Device_Context* _device_context;
     bool _is_main;
     Window* _parent;
     engine::Array<Window*> _children;
@@ -412,15 +421,11 @@ struct Window {
     Window_Style_Ex _current_style_ex;
     void* __internal;
 
-    window_event_callback_t _event_callback;
-    void* _event_userdata = NULL;
-
-    // TODO (2023-09-26)
-    // These magic buffer size numbers should be part
-    // of some config
-    engine::Linear_Allocator _event_buffer = engine::Linear_Allocator(1024 * 1000 * 10);
-    engine::Queue<_Event> _event_queue;
-    std::mutex _event_queue_mutex;
+    struct Callback {
+        window_event_callback_t fn;
+        void* ud = NULL;
+    };
+    engine::Array<Callback> event_callbacks;
 };
 
 NS_END(os);

@@ -120,5 +120,24 @@ New_String get_file_extension(const char* path) {
     return extension;
 }
 
+
+Io_Status ST_API read_as_string(const char* path, engine::New_String* str) {
+    File_Info fifo;
+    auto result = get_file_info(path, &fifo);
+
+    if (result != IO_STATUS_OK) return result;
+
+    *str = engine::New_String(fifo.file_size + 1);
+    result = read_as_string(path, str->str, fifo.file_size);
+
+    return result;
+}
+Io_Status ST_API write_string(const char* path, const engine::New_String& str) {
+    return write_string(path, str.str, str.len());
+}
+Io_Status ST_API append_string(const char* path, const engine::New_String& str) {
+    return append_string(path, str.str, str.len());
+}
+
 NS_END(io)
 NS_END(os)
