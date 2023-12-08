@@ -1,16 +1,20 @@
 
+local modules = {}
 
-local modules = {
-    "Sandbox",
-    "BaseGame"
-}
+local file = io.open("module_list", "r")
 
+for line in file:lines() do
+    table.insert(modules, line)
+end
+
+
+file:close() -- Close the file
 
 
 function stallout_project(name) 
     project (name)
-    language   "C++"
     warnings   "Extra"
+    language   "C++"
     cppdialect "C++20"
     targetdir  ("bin/%{cfg.buildcfg}/%{wks.name}/%{prj.name}")
     objdir     ("bin/%{cfg.buildcfg}/%{wks.name}/%{prj.name}/int")
@@ -20,8 +24,10 @@ function stallout_project(name)
         "%{prj.location}/include",
         "deps/mz",
         "deps/imgui",
-        "deps/spdlog/include",
+        "deps/spdlog/include"
+        
     }
+    undefines { "UNICODE", "_UNICODE" }
     files { "%{prj.location}/src/**.cpp", "%{prj.location}/include/**.h" }
     flags {
         "FatalWarnings",
@@ -37,13 +43,18 @@ function module_project(name)
     kind "SharedLib"
 
     includedirs {
-        "Engine/include",
-        "deps/dearimgui"
+        "Stallout/include",
+        "deps/dearimgui",
+        name .. "/include"
     }
 
     links {
-        "Engine",
+        "Stallout",
         "dearimgui"
+    }
+
+    defines {
+        "ST_MODULE_NAME=\"" .. name .. "\""
     }
 
     postbuildcommands {
@@ -69,6 +80,8 @@ workspace "Stallout"
         "IMGUI_IMPL_OPENGL_LOADER_XXX"
     }
 
+    files { "*.natvis", "*premake5.lua", "module_list", "*.bat", ".gitignore", "_todo.txt", "scripts/**" }
+    
     filter "platforms:*-opengl45*"
         defines { "_ST_RENDER_BACKEND_OPENGL", "_ST_RENDER_BACKEND_OPENGL45" }
     filter "platforms:*-vulkan*"
@@ -84,9 +97,9 @@ workspace "Stallout"
         defines {
             "_ST_CONFIG_DEBUG", 
             "_ST_ENABLE_GL_DEBUG_CONTEXT",
+            "ST_ENABLE_MEMORY_META_DEBUG",
             "DEBUG",
-            "_DEBUG",
-            "ST_ENABLE_MEMORY_DEBUG"
+            "_DEBUG"
         }
         runtime "Debug"
         symbols "On"
@@ -97,8 +110,9 @@ workspace "Stallout"
             "_ST_CONFIG_TEST"
         }
         runtime "Release"
-        optimize "Debug"
-        floatingpoint "Default"
+        symbols "On"
+        optimize "Speed"
+        floatingpoint "Fast"
 
     filter "configurations:Release*"
         defines  { 
@@ -110,6 +124,8 @@ workspace "Stallout"
         symbols  "Off"
         optimize "Speed"
         floatingpoint "Fast"
+
+    
 
     filter "system:windows"
         platforms { "x64-opengl45", "x64-opengl45-runtests", "x64-dx11", "x64-dx11-runtests", "x64-dx12", "x64-dx12-runtests", "x64-vulkan", "x64-vulkan-runtests" }
@@ -124,28 +140,44 @@ workspace "Stallout"
     filter "action:vs*"
         buildoptions { "/wd4201", "/wd26495" }
 
+    filter ""
+    group "modules"
         function write_modules_file(cfg)
-            local file = io.open("bin/".. cfg .. "/Stallout/Launcher/module_list", "w")
+            local file = io.open("bin/".. cfg .. "/Stallout/Launcher/module_list", "w+")
             -- Write the module names into the file
+            local first = true
             for _, moduleName in ipairs(modules) do
-                file:write(moduleName .. "\n")
-                module_project(moduleName);
+                if moduleName ~= "" then
+                    if first then
+                        file:write(moduleName)
+                        first = false
+                    else
+                        file:write("\n" .. moduleName)
+                    end
+                    module_project(moduleName);
+                end
             end
             file:close()
         end
         write_modules_file("Debug");
         write_modules_file("Test");
-        write_modules_file("Release");
+        write_modules_file("Release");    
+
+    group "core"
 
     stallout_project "Launcher"
         kind "ConsoleApp"
 
         includedirs {
-            "Engine/include"
+            "Stallout/include"
         }
 
         links {
-            "Engine"
+            "Stallout"
+        }
+
+        defines {
+            "ST_MODULE_NAME=\"Launcher\""
         }
 
         postbuildcommands {
@@ -154,9 +186,9 @@ workspace "Stallout"
 
 
 
-    stallout_project "Engine"
+    stallout_project "Stallout"
         kind "SharedLib"
-
+        
         postbuildcommands {
             "{COPY} %{cfg.buildtarget.relpath} %{wks.location}bin/%{cfg.buildcfg}/%{wks.name}/Launcher//"
         }
@@ -164,53 +196,58 @@ workspace "Stallout"
         defines {
             "GLFW_STATIC",
             "GLAD_STATIC",
-            "_ST_EXPORT"
+            "_ST_EXPORT",
+            "ST_CORE",
+            "ST_MODULE_NAME=\"Core\"",
+            --"FT2_BUILD_LIBRARY"
         }
 
         includedirs {
-            "Engine/include/Engine",
+            "Stallout/include/Stallout",
             "deps/glad/include",
             "deps/dearimgui",
             "deps/glfw/include",
             "deps/miniaudio",
             "deps/stb",
-            "deps/openal/repo/include"
+            "deps/openal/repo/include",
+            "deps/freetype2/include"
         }
 
         links {
             "dearimgui",
             "glfw",
             "glad",
-            "OpenAL32"
+            "OpenAL32",
+            "freetype2"
         }
 
         removefiles {
             "%{prj.location}/include/os/**",
             "%{prj.location}/src/os/**",
-            "%{prj.location}/src/renderer/**"
+            "%{prj.location}/src/graphics/**"
         }
 
         files {
             "%{prj.location}/include/os/*.h",
             "%{prj.location}/src/os/*.cpp",
-            "%{prj.location}/src/renderer/*"
+            "%{prj.location}/src/graphics/*"
         }
 
         filter "platforms:*-opengl45*"
             files {
-                "%{prj.location}/src/renderer/opengl45/**"
+                "%{prj.location}/src/graphics/opengl45/**"
             }
         filter "platforms:*-vulkan*"
             files {
-                "%{prj.location}/src/renderer/vulkan/**"
+                "%{prj.location}/src/graphics/vulkan/**"
             }
         filter "platforms:*-dx11*"
             files {
-                "%{prj.location}/src/renderer/dx11/**"
+                "%{prj.location}/src/graphics/dx11/**"
             }
         filter "platforms:*-dx12*"
             files {
-                "%{prj.location}/src/renderer/dx12/**"
+                "%{prj.location}/src/graphics/dx12/**"
             }
 
         filter "system:windows"
@@ -287,8 +324,7 @@ workspace "Stallout"
             }
         
 
-    module_project "Sandbox"
-        
+    group "deps"
 
     project "glfw"
         location   "deps/glfw"
@@ -409,4 +445,80 @@ workspace "Stallout"
                 "%{prj.location}/backends/imgui_impl_glfw*"
             }
 
-            
+    project "freetype2"
+        location   "deps/freetype2"
+        kind       "StaticLib"
+        language   "C++"
+        cppdialect "C++20"
+        warnings   "Off"
+        targetdir  ("bin/%{cfg.buildcfg}/deps/%{prj.name}")
+        objdir     ("bin/%{cfg.buildcfg}/deps/%{prj.name}/int")
+
+        defines {
+            "FT2_BUILD_LIBRARY"
+        }
+
+        files {
+            "%{prj.location}/include/**",
+            "%{prj.location}/src/base/ftbbox.c",
+            "%{prj.location}/src/base/ftbdf.c",
+            "%{prj.location}/src/base/ftbitmap.c",
+            "%{prj.location}/src/base/ftcid.c",
+            "%{prj.location}/src/base/ftfstype.c",
+            "%{prj.location}/src/base/ftgasp.c",
+            "%{prj.location}/src/base/ftglyph.c",
+            "%{prj.location}/src/base/ftgxval.c",
+            "%{prj.location}/src/base/ftmm.c",
+            "%{prj.location}/src/base/ftotval.c",
+            "%{prj.location}/src/base/ftpatent.c",
+            "%{prj.location}/src/base/ftpfr.c",
+            "%{prj.location}/src/base/ftstroke.c",
+            "%{prj.location}/src/base/ftsynth.c",
+            "%{prj.location}/src/base/fttype1.c",
+            "%{prj.location}/src/base/ftwinfnt.c",
+            "%{prj.location}/src/base/ftinit.c",
+            "%{prj.location}/src/base/ftbase.c",
+
+
+            "%{prj.location}/src/autofit/autofit.c",
+            "%{prj.location}/src/truetype/truetype.c",
+            "%{prj.location}/src/type1/type1.c",
+            "%{prj.location}/src/cff/cff.c",
+            "%{prj.location}/src/cid/type1cid.c",
+            "%{prj.location}/src/pfr/pfr.c",
+            "%{prj.location}/src/type42/type42.c",
+            "%{prj.location}/src/winfonts/winfnt.c",
+            "%{prj.location}/src/gzip/ftgzip.c",
+            "%{prj.location}/src/bdf/bdf.c",
+            "%{prj.location}/src/psaux/psaux.c",
+            "%{prj.location}/src/psnames/psnames.c",
+            "%{prj.location}/src/pshinter/pshinter.c",
+            "%{prj.location}/src/sfnt/sfnt.c",
+            "%{prj.location}/src/smooth/smooth.c",
+            "%{prj.location}/src/raster/raster.c",
+            "%{prj.location}/src/sdf/sdf.c",
+            "%{prj.location}/src/svg/svg.c",
+
+        }
+
+        removefiles {
+            "%{prj.location}/src/gzip/inffast.c",
+            "%{prj.location}/src/gzip/inflate.c",
+            "%{prj.location}/src/tools/ftrandom/ftrandom.c"
+        }
+
+        includedirs { 
+            "%{prj.location}/include",
+            "%{prj.location}/include/freetype",
+            "%{prj.location}/include/dlg"
+        }
+        filter "system:windows"
+            files {
+                "%{prj.location}/builds/windows/*.c"
+            }
+
+        filter "system:linux"
+            pic "On"
+            files {
+                "%{prj.location}/builds/unix/*.c"
+            }

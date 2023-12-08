@@ -1,5 +1,6 @@
 .vs
 .vscode
+.editor
 
 *.vcxproj
 *.vcxproj.filters
@@ -21,3 +22,14 @@ Design/
 *test_file.bin
 *test_file.txt
 *output 
+
+BaseGame
+TestGame
+Cherraria
+Sandbox
+
+Launcher/profiling.json
+Launcher/time.json
+Launcher/test_level
+Launcher/test_arch
+Launcher/test_arch_bin

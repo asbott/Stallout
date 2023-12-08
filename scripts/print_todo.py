@@ -49,15 +49,23 @@ def main(args):
         and (not args.filename_filter or f.startswith(args.filename_filter)) 
         and (not args.directory_filter or any(d_filter in dp for d_filter in args.directory_filter))
     ]
+    total_todos = 0
+    todos_per_tag = {}
     did_print = False
     for file_path in files:
         todos = find_todos_in_file(file_path)
         
+        total_todos += len(todos)
         if len(todos) > 0 and not did_print:
             print(f"\n========={args.directory}=========\n")
             did_print = True
         
         for line_number, tags, description in todos:
+            for tag in tags:
+                if tag in todos_per_tag:
+                    todos_per_tag[tag] += 1
+                else:
+                    todos_per_tag[tag] = 1
             if not args.tags_filter or any(tag in tags for tag in args.tags_filter):
                 print(f"File: {os.path.basename(file_path)}")
                 print(f"Line {line_number}")
@@ -70,6 +78,10 @@ def main(args):
                 else:
                     print("No Description")
                 print("----------------------------------------")
+    print("\nTotal TODOs:", total_todos)
+    print("TODOs per Tag:")
+    for tag, count in todos_per_tag.items():
+        print(f"{tag}: {count}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Find TODO comments in code files.")

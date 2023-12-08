@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  
+  <Type Name="::stallout::Forbidden_Array&lt;*&gt;">
+    <DisplayString>{{ size={(_end - _buffer_head) / sizeof($T1)} }}</DisplayString>
+    <Expand>
+      <Item Name="[size]" ExcludeView="simple">(_end - _buffer_head) / sizeof($T1)</Item>
+      <Item Name="[capacity]" ExcludeView="simple">_buffer_size / sizeof($T1)</Item>
+      <ArrayItems>
+        <Size>(_end - _buffer_head) / sizeof($T1)</Size>
+        <ValuePointer>($T1*)_buffer_head</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="::stallout::lchar*">
+    <DisplayString>{[this],s32}</DisplayString>
+  </Type>
+
+  
+
+  <Type Name="::stallout::LString">
+    <DisplayString>{str,s32}</DisplayString>
+    
+    <Expand>
+      <Item Name="[str]" ExcludeView="simple">str, s32</Item>
+      <Item Name="[size]" ExcludeView="simple">_buffer_size / sizeof(::stallout::lchar)</Item>
+      <Item Name="[capacity]" ExcludeView="simple">_buffer_size / sizeof(::stallout::lchar)</Item>
+      <ArrayItems>
+        <Size>_buffer_size / sizeof(::stallout::lchar)</Size>
+        <ValuePointer>(::stallout::lchar*)str,c</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+  <Type Name="::stallout::String">
+    <DisplayString>{str,s}</DisplayString>
+
+    <Expand>
+      <Item Name="[str]" ExcludeView="simple">str, su</Item>
+      <Item Name="[size]" ExcludeView="simple">_buffer_size</Item>
+      <Item Name="[capacity]" ExcludeView="simple">_buffer_size</Item>
+      <ArrayItems>
+        <Size>_buffer_size</Size>
+        <ValuePointer>(char*)str,c</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>
+
+
+</AutoVisualizer>

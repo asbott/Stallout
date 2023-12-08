@@ -1,25 +1,21 @@
-#include "pch.h"
-/*#include "os/modules.h"
-#include "os/io.h"
+﻿#include "pch.h"
 
-
-#include "Engine/logger.h"
-#include "Engine/debug/tests.h"
-#include "Engine/containers.h"*/
-
-#include "Engine/runtime.h"
-#include "Engine/logger.h"
-
+#include "Stallout/runtime.h"
+#include "Stallout/logger.h"
 
 int main(/*char** argv, int argc*/) {
 	
-	engine::runtime::start();
+	stallout::runtime::init();
 
-	if (engine::runtime::get_status_flags() & RUNTIME_STATUS_ERROR) {
-		log_error("Engine runtime exited with errors");
+	stallout::runtime::start();
+
+	auto status_code = stallout::runtime::get_status_code();
+
+	if (stallout::runtime::get_status_flags() & RUNTIME_STATUS_ERROR) {
+		log_error("Stallout runtime exited with code {}", status_code);
 	} else {
-		log_info("Engine runtime exited as expected");
+		log_info("Stallout runtime exited with code {}", status_code);
 	}
 
-	return 0;
+	return status_code;
 }
